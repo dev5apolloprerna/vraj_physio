@@ -29,28 +29,28 @@
     <table style="width:100%; text-align: start; border-bottom: 2px solid black;">
               <tr>
         <td rowspan="5" style="width: 56%; border:1px solid #fff; text-align:start;">
-            <img style="text-align:start;" width="150" src="https://getdemo.in/vrajPhysio/img/logo.png" alt="">
+            <img style="text-align:start;" width="150" src="https://vrajphysioapp.vrajdentalclinic.com/img/logo.png" alt="">
         </td>
     
     </tr>
     <tr>
             <td style="border:1px solid #fff; width:44%; text-align:start;">
-            <img width="16" src="https://getdemo.in/vrajPhysio/img/whatsapp.png" alt=""> +91 8866203090
+            <img width="16" src="https://vrajphysioapp.vrajdentalclinic.com/img/whatsapp.png" alt=""> +91 8866203090
         </td>
     </tr>
     <tr>
         <td style="border:1px solid #fff; width:44%; text-align:start;font-size:12px;">
-            <img width="16" src="https://getdemo.in/vrajPhysio/img/instagram.png" alt=""> Vraj physiotherapy & Child Development Center
+            <img width="16" src="https://vrajphysioapp.vrajdentalclinic.com/img/instagram.png" alt=""> Vraj physiotherapy & Child Development Center
         </td>
     </tr>
     <tr>
         <td style="border:1px solid #fff; width:44%; text-align:start;font-size:12px;">
-            <img width="16" src="https://getdemo.in/vrajPhysio/img/facebook.png" alt=""> Vraj Physiotherapy
+            <img width="16" src="https://vrajphysioapp.vrajdentalclinic.com/img/facebook.png" alt=""> Vraj Physiotherapy
         </td>
     </tr>
     <tr>
         <td style="border:1px solid #fff; width:44%; text-align:start;font-size:12px;">
-            <img width="16" src="https://getdemo.in/vrajPhysio/img/mail.png" alt=""> vrajphysiotherapyclinic@gmail.com
+            <img width="16" src="https://vrajphysioapp.vrajdentalclinic.com/img/mail.png" alt=""> vrajphysiotherapyclinic@gmail.com
         </td>
     </tr>
 

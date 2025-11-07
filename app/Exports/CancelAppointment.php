@@ -4,44 +4,45 @@ namespace App\Exports;
 use Maatwebsite\Excel\Concerns\FromCollection;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 
-
-class TotalAttended implements FromCollection, WithHeadings
+class CancelAppointment implements FromCollection, WithHeadings
 {
-    protected $sessionList;
+    protected $scheduleList;
     protected $fromDate;
     protected $toDate;
     protected $Month;
     protected $Year;
 
-
-    public function __construct($sessionList, $fromDate = null, $toDate = null,$Month= null ,$Year= null)
+    public function __construct(array $scheduleList, $fromDate = null, $toDate = null,$Month= null ,$Year= null)
     {
-        $this->attendedSession = $sessionList;
+        $this->sessionList = $scheduleList;
         $this->fromDate = $fromDate;
         $this->toDate = $toDate;
         $this->Month = $Month;
         $this->Year = $Year;
 
+        
     }
-    
+
     public function collection()
     {
-        return collect($this->attendedSession);
+        return collect($this->sessionList);
     }
+
     public function headings(): array
     {
         return [
-            ['Total Attended Session Report'], // Title Row (Bold)
+            ['Toda Cancel Appointment List'], // Title Row (Bold)
             ['From Date: ' . ($this->fromDate ?? 'N/A'), 'To Date: ' . ($this->toDate ?? 'N/A'), 'Month: ' . ($this->Month ? date('F', mktime(0, 0, 0, $this->Month, 1)) : 'N/A'), 'Year: ' . ($this->Year ?? 'N/A')], // Date Row
             [], // Empty row for spacing
             ['Date',
+            'Start Time',
+            'End Time',
             'Patient Name',
-            'Treatment Name',
-            'Amount',
-            'Payment Mode'] // Actual column headings
+            'Therapist Name',
+            'Treatment Name'] // Actual column headings
         ];
     }
-        public function registerEvents(): array
+            public function registerEvents(): array
     {
         return [
             AfterSheet::class => function (AfterSheet $event) {
@@ -60,5 +61,5 @@ class TotalAttended implements FromCollection, WithHeadings
             }
         ];
     }
+
 }
-?>

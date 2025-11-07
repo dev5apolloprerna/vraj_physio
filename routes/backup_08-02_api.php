@@ -74,7 +74,6 @@ Route::post('/today_patient_list', [ListingController::class, 'today_patient_lis
 Route::post('/today_cancel_appointment_list', [ListingController::class, 'today_cancel_appointment_list'])->name('today_cancel_appointment_list');
 Route::post('/today_new_patient', [ListingController::class, 'today_new_patient'])->name('today_new_patient');
 Route::post('/today_collection', [ListingController::class, 'today_collection'])->name('today_collection');
-Route::post('/today_appointment_treatment', [ListingController::class, 'today_appointment_treatment'])->name('today_appointment_treatment');
 
 /*---------------------------- ALL Listing END----------------------------------***/
 
@@ -143,10 +142,6 @@ Route::post('/billId_delete', [CRUDController::class, 'billId_delete'])->name('b
 Route::post('/delete_treatment', [CRUDController::class, 'delete_treatment'])->name('delete_treatment');
 
 Route::post('/patient_in_store', [CRUDController::class, 'patient_in_store'])->name('patient_in_store');
-Route::post('/edit_my_treatment_list', [CRUDController::class, 'edit_my_treatment_list'])->name('edit_my_treatment_list');
-
-/*----------------------------Ptient session crud----------------------------------***/
-
 Route::post('/patient_session_start', [PatientSessionController::class, 'patient_session_start'])->name('patient_session_start');
 Route::post('/patient_session_end', [PatientSessionController::class, 'patient_session_end'])->name('patient_session_end');
 Route::post('/patient_session_cancel', [PatientSessionController::class, 'patient_session_cancel'])->name('patient_session_cancel');
@@ -166,7 +161,6 @@ Route::post('/payment_list', [OrderController::class, 'payment_list'])->name('pa
 Route::post('/order_payment_detail', [OrderController::class, 'order_payment_detail'])->name('order_payment_detail');
 Route::post('/generate_invoice', [OrderController::class, 'generate_invoice'])->name('generate_invoice');
 Route::post('/invoice_list', [OrderController::class, 'invoice_list'])->name('invoice_list');
-Route::post('/cancel_patient', [OrderController::class, 'cancel_patient'])->name('cancel_patient');
 
 
 Route::post('/invoice_pdf', [InvoiceController::class, 'invoice_pdf'])->name('invoice_pdf');
@@ -174,15 +168,9 @@ Route::post('/payment_detail_pdf', [InvoiceController::class, 'payment_detail_pd
 
 //--------------------------reports-----------------------//
 Route::post('/patient_attended_session', [ReportController::class, 'patient_attended_session'])->name('patient_attended_session');
-Route::post('/total_session_report', [ReportController::class, 'total_session_report'])->name('total_session_report');
+Route::post('/treatment_wise_total_collection', [ReportController::class, 'treatment_wise_total_collection'])->name('treatment_wise_total_collection');
 Route::post('/patient_payment_collection', [ReportController::class, 'patient_payment_collection'])->name('patient_payment_collection');
 Route::post('/patient_due_amount_msg', [ReportController::class, 'patient_due_amount_msg'])->name('patient_due_amount_msg');
-Route::post('/total_collection_report', [ReportController::class, 'total_collection_report'])->name('total_collection_report');
-Route::post('/total_attended_session_report', [ReportController::class, 'total_attended_session_report'])->name('total_attended_session_report');
-Route::post('/daily_collection_report', [ReportController::class, 'daily_collection_report'])->name('daily_collection_report');
-Route::post('/total_patient_collection_report', [ReportController::class, 'total_patient_collection_report'])->name('total_patient_collection_report');
-Route::post('/groupsession_report', [ReportController::class, 'groupsession_report'])->name('groupsession_report');
-Route::post('/patient_visit_report', [ReportController::class, 'patient_visit_report'])->name('patient_visit_report');
 
 //-----------------------------Dashboard -------------------------------//
 Route::post('/dashboard', [DashboardController::class, 'index'])->name('dashboard');

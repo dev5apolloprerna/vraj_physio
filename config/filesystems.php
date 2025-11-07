@@ -35,12 +35,18 @@ return [
             'root' => storage_path('app'),
         ],
 
-        'public' => [
+        /*'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),
             'url' => env('APP_URL').'/storage',
             'visibility' => 'public',
-        ],
+        ],*/
+        'public' => [
+        'driver' => 'local',
+        'root' => '/home3/vrajdahj/vrajphysioapp.vrajdentalclinic.com/reports',
+        'url' => env('APP_URL') . '/reports',
+        'visibility' => 'public',
+    ],
 
         's3' => [
             'driver' => 's3',

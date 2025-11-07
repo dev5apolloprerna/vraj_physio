@@ -15,6 +15,6 @@ class PatientSuggestedTreatment extends Model
     public $timestamps = false; // Disable timestamps
     
     protected $fillable = [
-        'PatientSTreatmentId', 'patient_id', 'treatment_id', 'iSessionBuy', 'iUsedSession', 'iAvailableSession'
+        'PatientSTreatmentId', 'iOrderId','iOrderDetailId','patient_id', 'treatment_id', 'iSessionBuy', 'iUsedSession', 'iAvailableSession','isActive','manually_consumed'
     ];
 }

@@ -103,7 +103,7 @@ class InvoiceController extends Controller
                         Storage::disk('public')->put('bills/' . $fileName . '.pdf', $content);
 
                         // Ensure the directory exists on the production server
-                        $productionPath = '/home1/getdemo/public_html/vrajPhysio/bills/' . $fileName . '.pdf';
+                        $productionPath = '/home3/vrajdahj/vrajphysioapp.vrajdentalclinic.com/bills/' . $fileName . '.pdf';
                         if (!file_exists(dirname($productionPath))) {
                             mkdir(dirname($productionPath), 0777, true);  // Create directory if it doesn't exist
                         }
@@ -219,7 +219,7 @@ class InvoiceController extends Controller
                         Storage::disk('public')->put('bills/' . $fileName . '.pdf', $content);
 
                         // Ensure the directory exists on the production server
-                        $productionPath = '/home1/getdemo/public_html/vrajPhysio/bills/' . $fileName . '.pdf';
+                        $productionPath = '/home3/vrajdahj/vrajphysioapp.vrajdentalclinic.com/bills/' . $fileName . '.pdf';
                         if (!file_exists(dirname($productionPath))) {
                             mkdir(dirname($productionPath), 0777, true);  // Create directory if it doesn't exist
                         }

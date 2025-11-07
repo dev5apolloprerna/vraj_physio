@@ -14,6 +14,6 @@ class OrderDetail extends Model
     public $timestamps = false; // Disable timestamps
 
     protected $fillable = [
-        'iOrderDetailId', 'iOrderId', 'iTreatmentId', 'iPlanId', 'iAmount', 'iSession','cancel_package'
+        'iOrderDetailId', 'iOrderId', 'iTreatmentId', 'iPlanId', 'iAmount', 'iSession'
     ];
 }

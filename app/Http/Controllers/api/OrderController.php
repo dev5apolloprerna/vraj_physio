@@ -10,7 +10,7 @@ use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-    
+	
 use App\Models\Billing;
 use App\Models\Plan;
 use App\Models\Patient;
@@ -29,9 +29,9 @@ use Carbon\Carbon;
 
 class OrderController extends Controller
 {
-    public function buy_treatment_package(Request $request)
-    {
-        try
+	public function buy_treatment_package(Request $request)
+	{
+		try
         {
             $request->validate([
                 'tempid' => 'required|array',
@@ -60,7 +60,7 @@ class OrderController extends Controller
                             $totalAmount += $item->amount;
                         }
     
-                        $iNetAmount = $totalAmount - ($totalAmount * $request->discount / 100);
+    					$iNetAmount = $totalAmount - ($totalAmount * $request->discount / 100);
                         /*if($request->dueAmount == 0)
                         {
                             $dueamount =$totalAmount;
@@ -153,7 +153,7 @@ class OrderController extends Controller
                         'status' => 'error',
                         'message' => 'User is not Authorised.',
                 ], 401);
-            }
+        	}
         } catch (ValidationException $e) {
             return response()->json(['errors' => $e->errors()], 422);
         } catch (\Throwable $th) {
@@ -316,7 +316,7 @@ class OrderController extends Controller
                                                 if(!empty($patient)){
                                                     
                                                     $users = new User();
-                                                
+                                            	
                                                 $msg = "Dear Parent,\n\n"
                                                 . "We have received your payment successfully. Thank you for your prompt payment!\n\n"
                                                 . "Payment Details:\n\n"
@@ -327,7 +327,7 @@ class OrderController extends Controller
                                                 . "Vraj PHYSIOTHERAPY AND CHILD DEVELOPMENT CENTER";
 
                                                
-                                                $status = $users->sendWhatsappMessage($patient->phone,$key,$msg, $someOtherParam = null);    
+                        						$status = $users->sendWhatsappMessage($patient->phone,$key,$msg, $someOtherParam = null);    
                                                 }
                                         }           
                                     }
@@ -660,78 +660,78 @@ class OrderController extends Controller
             return response()->json(['error' => $th->getMessage()], 500);
         }
     }
-    public function cancel_patient(Request $request)
-    {
+     public function cancel_patient(Request $request)
+{
     
-        try 
+    try 
+    {
+        if(auth()->guard('api')->user())
         {
-            if(auth()->guard('api')->user())
-            {
-                 $User = auth()->guard('api')->user();
-                 
-                    if($request->device_token != $User->device_token)
-                    {
-                        return response()->json([
-                            "ErrorCode" => "1",
-                            'Status' => 'Failed',
-                            'Message' => 'Device Token Not Match',
-                        ], 401);
-                    }
-                    
+             $User = auth()->guard('api')->user();
+             
+                if($request->device_token != $User->device_token)
+                {
+                    return response()->json([
+                        "ErrorCode" => "1",
+                        'Status' => 'Failed',
+                        'Message' => 'Device Token Not Match',
+                    ], 401);
+                }
+                
 
-                        $date=date('Y-m-d');
+                    $date=date('Y-m-d');
 
+                        $order = OrderDetail::where([
+                                'patientorderdetail.iOrderId' => $request->iOrderId,
+                                'patientorderdetail.iOrderDetailId' => $request->iOrderDetailId,
+                                'patient_id' => $request->patient_id
+                            ])
+                            ->join('patientordermaster', 'patientordermaster.iOrderId', '=', 'patientorderdetail.iOrderId')
+                            ->where(function ($query) {
+                                $query->where('cancel_package', 1);
+                            })
+                            ->first();
+
+                            if ($order) {
+                                return response()->json([
+                                    'status' => 'success',
+                                    'message' => 'Patient Package Already Canceled',
+                                ]);
+                            }
+
+                            // If no order is found, create or find a valid one to update
                             $order = OrderDetail::where([
-                                    'patientorderdetail.iOrderId' => $request->iOrderId,
-                                    'patientorderdetail.iOrderDetailId' => $request->iOrderDetailId,
-                                    'patient_id' => $request->patient_id
-                                ])
-                                ->join('patientordermaster', 'patientordermaster.iOrderId', '=', 'patientorderdetail.iOrderId')
-                                ->where(function ($query) {
-                                    $query->where('cancel_package', 1);
-                                })
-                                ->first();
+                                'iOrderId' => $request->iOrderId,
+                                'iOrderDetailId' => $request->iOrderDetailId,
+                            ])->first();
 
-                                if ($order) {
-                                    return response()->json([
-                                        'status' => 'success',
-                                        'message' => 'Patient Package Already Canceled',
-                                    ]);
-                                }
-
-                                // If no order is found, create or find a valid one to update
-                                $order = OrderDetail::where([
-                                    'iOrderId' => $request->iOrderId,
-                                    'iOrderDetailId' => $request->iOrderDetailId,
-                                ])->first();
-
-                                if ($order && $request->cancel_package == 1) 
-                                {
-                                    $order->cancel_package = 1;
-                                    $order->save();
-
-                                    return response()->json([
-                                        'status' => 'success',
-                                        'message' => 'Patient Package Canceled Successfully',
-                                    ]);
-                                }
+                            if ($order && $request->cancel_package == 1) 
+                            {
+                                $order->cancel_package = 1;
+                                $order->save();
 
                                 return response()->json([
-                                    'status' => 'error',
-                                    'message' => 'Order not found',
+                                    'status' => 'success',
+                                    'message' => 'Patient Package Canceled Successfully',
                                 ]);
+                            }
+
+                            return response()->json([
+                                'status' => 'error',
+                                'message' => 'Order not found',
+                            ]);
 
 
-            }else{
-                return response()->json([
-                        'status' => 'error',
-                        'message' => 'User is not Authorised.',
-                ], 401);
-            }
-        } catch (ValidationException $e) {
-            return response()->json(['errors' => $e->errors()], 422);
-        } catch (\Throwable $th) {
-            return response()->json(['error' => $th->getMessage()], 500);
+        }else{
+            return response()->json([
+                    'status' => 'error',
+                    'message' => 'User is not Authorised.',
+            ], 401);
         }
-      }   
+    } catch (ValidationException $e) {
+        return response()->json(['errors' => $e->errors()], 422);
+    } catch (\Throwable $th) {
+        return response()->json(['error' => $th->getMessage()], 500);
+    }
+  }   
 }

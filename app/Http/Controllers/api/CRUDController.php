@@ -94,9 +94,9 @@ class CRUDController extends Controller
                     $patient->save();
                         
                         $key = $_ENV['WHATSAPPKEY'];
-                        $users = new User();
-                        $msg = "Welcome to Vraj PHYSIOTHERAPY AND CHILD DEVELOPMENT CENTER! We’re excited to have you with us and look forward to supporting your child's growth and development. Our dedicated team is here to help every step of the way!";
-                        $status = $users->sendWhatsappMessage($request->mobile,$key,$msg, $someOtherParam = null);
+                    	$users = new User();
+                    	$msg = "Welcome to Vraj PHYSIOTHERAPY AND CHILD DEVELOPMENT CENTER! We’re excited to have you with us and look forward to supporting your child's growth and development. Our dedicated team is here to help every step of the way!";
+						$status = $users->sendWhatsappMessage($request->mobile,$key,$msg, $someOtherParam = null);
 
                     return response()->json([
                         'status' => 'success',
@@ -288,7 +288,7 @@ class CRUDController extends Controller
                                 $arr = explode(' ', $EntrDate);
                                 $dateArrar = explode('-', $arr[0]);
                                 $root = $_SERVER['DOCUMENT_ROOT'];
-                                $destinationPath = $root .'/vrajPhysio/'.$request->patient_id.'/'.'PatientDocument/';
+                                $destinationPath = $root .'/'.$request->patient_id.'/'.'PatientDocument/';
                                 if (!file_exists($destinationPath)) 
                                 {
                                     mkdir($destinationPath, 0755, true);
@@ -2018,7 +2018,7 @@ class CRUDController extends Controller
                     $ledger->save();
                     
                    
-                        
+                  		
                 }
                      return response()->json([
                         'status' => 'success',
@@ -2252,7 +2252,7 @@ class CRUDController extends Controller
                             'Message' => 'Device Token Not Match',
                         ], 401);
                     }
-                   $today = date('Y-m-d');
+                     $today = date('Y-m-d');
 
                 // Fetch the schedule linked to this request
                 $schedule = PatientSchedule::where(['patient_schedule_id' => $request->patient_schedule_id])->first();
@@ -2315,29 +2315,28 @@ class CRUDController extends Controller
                 }
 
 
-
-                            }else{
-                                return response()->json([
-                                        'status' => 'error',
-                                        'message' => 'User is not Authorised.',
-                                ], 401);
-                            }
-                        } catch (ValidationException $e) {
-                            return response()->json(['errors' => $e->errors()], 422);
-                        } catch (\Throwable $th) {
-                            return response()->json(['error' => $th->getMessage()], 500);
-                        }   
-                    }
-                    public function delete_treatment(Request $request)
+            }else{
+                return response()->json([
+                        'status' => 'error',
+                        'message' => 'User is not Authorised.',
+                ], 401);
+            }
+        } catch (ValidationException $e) {
+            return response()->json(['errors' => $e->errors()], 422);
+        } catch (\Throwable $th) {
+            return response()->json(['error' => $th->getMessage()], 500);
+        }   
+    }
+    public function delete_treatment(Request $request)
+    {
+        try
+        {
+            if(auth()->guard('api')->user())
+            {
+                 $User = auth()->guard('api')->user();
+                 
+                    if($request->device_token != $User->device_token)
                     {
-                        try
-                        {
-                            if(auth()->guard('api')->user())
-                            {
-                                 $User = auth()->guard('api')->user();
-                                 
-                                    if($request->device_token != $User->device_token)
-                                    {
                         return response()->json([
                             "ErrorCode" => "1",
                             'Status' => 'Failed',

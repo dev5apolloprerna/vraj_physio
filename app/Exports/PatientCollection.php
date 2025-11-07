@@ -32,7 +32,7 @@ class PatientCollection implements FromCollection, WithHeadings
     {
         return [
             ['Total Patient Collection Report'], // Title Row (Bold)
-            ['From Date: ' . ($this->fromDate ?? 'N/A'), 'To Date: ' . ($this->toDate ?? 'N/A'), 'Month: ' . ($this->Month ?? 'N/A'), 'Year: ' . ($this->Year ?? 'N/A')], // Date Row
+            ['From Date: ' . ($this->fromDate ?? 'N/A'), 'To Date: ' . ($this->toDate ?? 'N/A'), 'Month: ' . ($this->Month ? date('F', mktime(0, 0, 0, $this->Month, 1)) : 'N/A'), 'Year: ' . ($this->Year ?? 'N/A')], // Date Row
             [], // Empty row for spacing
             ['receipt_no',
             'payment_date' ,

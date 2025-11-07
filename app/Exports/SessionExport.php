@@ -31,14 +31,15 @@ class SessionExport implements FromCollection, WithHeadings
     public function headings(): array
     {
         return [
-            ['Patient Attended  Report'], // Title Row (Bold)
-            ['From Date: ' . ($this->fromDate ?? 'N/A'), 'To Date: ' . ($this->toDate ?? 'N/A'), 'Month: ' . ($this->Month ?? 'N/A'), 'Year: ' . ($this->Year ?? 'N/A')], // Date Row
+            ['Patient Attended Session Report'], // Title Row (Bold)
+            ['From Date: ' . ($this->fromDate ?? 'N/A'), 'To Date: ' . ($this->toDate ?? 'N/A'), 'Month: ' . ($this->Month ? date('F', mktime(0, 0, 0, $this->Month, 1)) : 'N/A'), 'Year: ' . ($this->Year ?? 'N/A')], // Date Row
             [], // Empty row for spacing
             ['Invoice No',
             'Date',
             'Patient Name',
             'Therapist Name',
             'Treatment Name',
+            'Group Session',
             'Per Session Amount'] // Actual column headings
         ];
     }

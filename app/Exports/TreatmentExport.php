@@ -31,8 +31,8 @@ class TreatmentExport implements FromCollection, WithHeadings,WithEvents
     public function headings(): array
     {
         return [
-            ['Total Session Report'], // Title Row
-            ['From Date: ' . ($this->fromDate ?? 'N/A'), 'To Date: ' . ($this->toDate ?? 'N/A'), 'Month: ' . ($this->Month ?? 'N/A'), 'Year: ' . ($this->Year ?? 'N/A')], // Date Row
+            ['Collection of Treatment_'], // Title Row
+            ['From Date: ' . ($this->fromDate ?? 'N/A'), 'To Date: ' . ($this->toDate ?? 'N/A'), 'Month: ' . ($this->Month ? date('F', mktime(0, 0, 0, $this->Month, 1)) : 'N/A'), 'Year: ' . ($this->Year ?? 'N/A')], // Date Row
             [], // Empty row
             ['Treatment Name', 'Attended Session', 'Amount Per Session', 'Total'], // Table Headers
         ];

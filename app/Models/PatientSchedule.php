@@ -14,6 +14,6 @@ class PatientSchedule extends Model
     public $timestamps = false; // Disable timestamps
 
     protected $fillable = [
-        'patient_schedule_id', 'patient_id', 'day', 'scheduleid', 'schedule_start_time', 'schedule_end_time', 'treatment_id', 'therapist_id'
+        'patient_schedule_id', 'patient_id', 'orderId','day', 'scheduleid', 'schedule_start_time', 'schedule_end_time', 'treatment_id', 'therapist_id'
     ];
 }

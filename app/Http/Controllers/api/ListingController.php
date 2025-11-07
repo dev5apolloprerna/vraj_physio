@@ -171,17 +171,17 @@ class ListingController extends Controller
                       $export = new PatientExport($PatientList2, $request->search);
 
                         // Define the target directory and ensure it exists
-                        $basePath = '/home1/getdemo/public_html/vrajPhysio/reports';
+                        $basePath = '/home3/vrajdahj/vrajphysioapp.vrajdentalclinic.com/reports';
                         if (!file_exists($basePath)) {
                             mkdir($basePath, 0755, true); // Create the directory with appropriate permissions
                         }
-                        
                         // Define the file path
                         $fileName = 'patient_list_' . now()->format('Y_m_d_H_i_s') . '.xlsx';
                         $filePath = $basePath . '/' . $fileName;
                         
                         // Store the Excel file
                         Excel::store($export, 'export/' . $fileName, 'public'); // Adjust path relative to 'public' disk
+                        // dd("Hi");
                         
                         // Generate the public file URL
                         $fileUrl = asset('reports/export/' . $fileName);
@@ -344,7 +344,7 @@ class ListingController extends Controller
 
                     $root = $_SERVER['DOCUMENT_ROOT'];
                                 
-                    $target_path = 'https://getdemo.in/vrajPhysio/'.$request->patient_id.'/'.'PatientDocument/';
+                    $target_path = 'http://vrajphysioapp.vrajdentalclinic.com/'.$request->patient_id.'/'.'PatientDocument/';
 
                     $PatientDoc=PatientDocument::where(['patient_documents.patient_id'=>$request->patient_id])
                                 ->join('patient_master', 'patient_master.patient_id', '=', 'patient_documents.patient_id')
@@ -2065,8 +2065,8 @@ public function refrenceBy_list(Request $request)
 
                         ->orderBy('iSessionTakenId', 'desc')->get();
 
-                        $treatmentCounter = []; // Initialize treatment counter
-
+                        
+                    $treatmentCounter = []; // Initialize treatment counter
 
                         if(sizeof($sessionMaster) != 0)
                         {
@@ -2135,17 +2135,16 @@ public function refrenceBy_list(Request $request)
                                     $status='session cancle';
                                 }
 
-                                $createdDate = Carbon::parse($val->created_at);
-
+                                $createdDate = Carbon::parse($val->created_at);     
+                        
                         $treatmentKey = $val->patient_id . '-' . $val->treatment_id; // Unique key for each patient-treatment
                         if (!isset($treatmentCounter[$treatmentKey])) {
                             $treatmentCounter[$treatmentKey] = 1; // Start counting from 1
                         } else {
                             $treatmentCounter[$treatmentKey]++; // Increment count
                         }
-
                                 $scheduleList[] = array(
-                                    "serial_no" => $treatmentCounter[$treatmentKey], // Add serial number
+                                    "sr_no" => $treatmentCounter[$treatmentKey], // Add serial number
                                     "patient_schedule_id" => $val->scheduleid,
                                     "patient_session_id" => $val->iSessionTakenId,
                                     "days" =>  $createdDate->dayOfWeekIso,
@@ -2817,7 +2816,7 @@ public function refrenceBy_list(Request $request)
                       $export = new CancelAppointment($scheduleList2, $request->fromdate, $request->todate, $request->month, $request->year);
 
                     // Define the target directory and ensure it exists
-                    $basePath = '/home1/getdemo/public_html/vrajPhysio/reports';
+                    $basePath = '/home3/vrajdahj/vrajphysioapp.vrajdentalclinic.com/reports';
                     if (!file_exists($basePath)) {
                         mkdir($basePath, 0755, true); // Create the directory with appropriate permissions
                     }

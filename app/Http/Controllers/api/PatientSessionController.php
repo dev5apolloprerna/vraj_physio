@@ -25,7 +25,7 @@ use Carbon\Carbon;
 
 class PatientSessionController extends Controller
 {
-    public function patient_session_start(Request $request)
+	public function patient_session_start(Request $request)
     {
          try 
         {
@@ -61,38 +61,38 @@ class PatientSessionController extends Controller
                     if($schedule)
                     {
                          $date=date('Y-m-d');
-                         $SessionMasterdata=SessionMaster::where(['patient_id'=>$request->patient_id,'therapist_id'=>$request->therapist_id,'treatment_id'=>$request->treatment_id,'iPatientInId'=>$request->patient_in_id,'created_at'=>$date])->first();
-                         
-                        if($SessionMasterdata)
-                        {
-                            return response()->json([
-                                'status' => 'error',
-                                'message' => 'Patient Session Already Started',
-                            ],401);
-                        }else{
+                    	 $SessionMasterdata=SessionMaster::where(['patient_id'=>$request->patient_id,'therapist_id'=>$request->therapist_id,'treatment_id'=>$request->treatment_id,'iPatientInId'=>$request->patient_in_id,'created_at'=>$date])->first();
+                    	 
+	                    if($SessionMasterdata)
+	                    {
+	                    	return response()->json([
+		                        'status' => 'error',
+		                        'message' => 'Patient Session Already Started',
+		                    ],401);
+	                    }else{
 
 
-                            $SessionMaster=new SessionMaster();
-                            $SessionMaster->patient_id=$request->patient_id;
-                            $SessionMaster->scheduleid=$schedule->patient_schedule_id;
-                            $SessionMaster->iPatientInId=$request->patient_in_id;
-                            $SessionMaster->SessionStartTime=date('H:i:s');
-                            $SessionMaster->treatment_id=$request->treatment_id;
-                            $SessionMaster->therapist_id=$request->therapist_id;
-                            $SessionMaster->created_at=$date;
-                            $SessionMaster->save();
+		                    $SessionMaster=new SessionMaster();
+		                    $SessionMaster->patient_id=$request->patient_id;
+		                    $SessionMaster->scheduleid=$schedule->patient_schedule_id;
+		                    $SessionMaster->iPatientInId=$request->patient_in_id;
+		                    $SessionMaster->SessionStartTime=date('H:i:s');
+		                    $SessionMaster->treatment_id=$request->treatment_id;
+		                    $SessionMaster->therapist_id=$request->therapist_id;
+		                    $SessionMaster->created_at=$date;
+		                    $SessionMaster->save();
 
-                            return response()->json([
-                                'status' => 'success',
-                                'session_id' => $SessionMaster->iSessionTakenId,
-                                'message' => 'Patient Session Start Successfully',
-                            ]);
-                            }
+		                    return response()->json([
+		                        'status' => 'success',
+		                        'session_id' => $SessionMaster->iSessionTakenId,
+		                        'message' => 'Patient Session Start Successfully',
+		                    ]);
+		                	}
                     }else{
-                         return response()->json([
-                            'status' => 'error',
-                            'message' => 'Patient Session Not Found',
-                        ],401);
+                    	 return response()->json([
+	                        'status' => 'error',
+	                        'message' => 'Patient Session Not Found',
+	                    ],401);
                     }
 
             }else{
@@ -131,18 +131,18 @@ class PatientSessionController extends Controller
                     // Update the fields if session exists
                     if ($session) 
                     {
-                        
+	                    
 
-                        $ledger = PatientTreatmentLedger::where('patient_id', $session->patient_id)
-                            ->where('treatment_id', $session->treatment_id)
-                            ->where('therapist_id', $session->therapist_id)
+	                    $ledger = PatientTreatmentLedger::where('patient_id', $session->patient_id)
+						    ->where('treatment_id', $session->treatment_id)
+						    ->where('therapist_id', $session->therapist_id)
                             ->where('patient_id', $session->patient_id)
-                            ->first();
+						    ->first();
 
                             
-                            if ($ledger) 
-                            {
-                                $used_session = 1; // The number of sessions being used
+							if ($ledger) 
+							{
+							    $used_session = 1; // The number of sessions being used
 
                                 $new_opening_balance = $ledger->closing_balance; 
                                 $new_credit_balance = $ledger->credit_balance - $used_session;
@@ -164,48 +164,50 @@ class PatientSessionController extends Controller
 
                                 // Save the ledger entry
                                 $ledger->save();
-                            }
+							}
                             $schedule=PatientSchedule::where(['patient_schedule_id'=>$session->scheduleid])->first();
 
-                            $suggested=PatientSuggestedTreatment::where('patient_id', $session->patient_id)
-                                ->where(['treatment_id'=> $session->treatment_id,'iOrderId'=>$schedule->orderId,'isActive'=>1])->first();
 
-                               if($suggested)
-                               {
-                                 if ($suggested->iUsedSession == 0) 
-                                    {
-                                       $used = $suggested->iUsedSession = 1;
-                                    } else {
-                                        $used=$suggested->iUsedSession += 1; // Increment by 1 if already set
-                                    }
-                                    
-                                    $suggested->iUsedSession=$used; 
-                                    $suggested->iAvailableSession = $suggested->iSessionBuy - $used;
-                                    $suggested->save();
-                               }
-                               $suggest=PatientSuggestedTreatment::where('patient_id', $session->patient_id)->where('treatment_id', $session->treatment_id)
-                                ->where('PatientSTreatmentId', $suggested->PatientSTreatmentId)->first();
-                       
+							$suggested=PatientSuggestedTreatment::where('patient_id', $schedule->patient_id)
+							    ->where(['treatment_id'=> $schedule->treatment_id,'iOrderId'=>$schedule->orderId,'isActive'=>1])->first();
+
+
+							   if($suggested)
+							   {
+							   	 if ($suggested->iUsedSession == 0) 
+							   	 	{
+								       $used = $suggested->iUsedSession = 1;
+								    } else {
+								        $used=$suggested->iUsedSession += 1; // Increment by 1 if already set
+								    }
+							   		
+							   		$suggested->iUsedSession=$used; 
+								    $suggested->iAvailableSession = $suggested->iSessionBuy - $used;
+							   		$suggested->save();
+							   }
+							   $suggest=PatientSuggestedTreatment::where('patient_id', $session->patient_id)->where('treatment_id', $session->treatment_id)
+							    ->where('PatientSTreatmentId', $suggested->PatientSTreatmentId)->first();
+                      
                        if($suggest->iAvailableSession == 0)
                        {
-                                $suggest->isActive=0; 
-                                $suggest->save();
+                       		    $suggest->isActive=0; 
+						   		$suggest->save();
                        }
 
-                        $session->SessionEndTime=date('H:i:s');
-                        $session->session_status=2;
-                        $session->save();
+						$session->SessionEndTime=date('H:i:s');
+						$session->session_status=2;
+	                    $session->save();
 
-                        return response()->json([
-                            'status' => 'success',
-                            'message' => 'Patient Session End Successfully',
-                        ]);
-                    }else{
-                        return response()->json([
-                            'status' => 'success',
-                            'message' => 'Patient Session Already Ended',
-                        ]);
-                    }
+	                    return response()->json([
+	                        'status' => 'success',
+	                        'message' => 'Patient Session End Successfully',
+	                    ]);
+	                }else{
+	                	return response()->json([
+	                        'status' => 'success',
+	                        'message' => 'Patient Session Already Ended',
+	                    ]);
+	                }
 
 
             }else{
@@ -243,21 +245,21 @@ class PatientSessionController extends Controller
                     // Update the fields if session exists
                     if ($session) 
                     {
-                       // $session->SessionEndTime=date('H:i:s');
-                        $session->SessionEndTime=null;
-                        $session->session_status=3;
+	                   // $session->SessionEndTime=date('H:i:s');
+	                    $session->SessionEndTime=null;
+	                    $session->session_status=3;
 
-                        $session->save();
-                        return response()->json([
+	                    $session->save();
+    	                return response()->json([
                             'status' => 'success',
                             'message' => 'Patient Session Cancel Successfully',
                         ]);
-                    }else{
-                         return response()->json([
+	                }else{
+	                     return response()->json([
                         'status' => 'success',
                         'message' => 'Patient Session Data Not Found',
                     ],401);
-                    }
+	                }
 
                    
 
@@ -431,8 +433,8 @@ class PatientSessionController extends Controller
                                             
                                              if($suggested->iAvailableSession == 0)
                                                {
-                                                        $suggested->isActive=0; 
-                                                        $suggested->save();
+                                               		    $suggested->isActive=0; 
+                        						   		$suggested->save();
                                                }
                                        }
                                             $inpatient=new PatientIn();
@@ -550,8 +552,8 @@ class PatientSessionController extends Controller
                     
                     if($suggested->iAvailableSession == 0)
                        {
-                                $suggested->isActive=0; 
-                                $suggested->save();
+                       		    $suggested->isActive=0; 
+						   		$suggested->save();
                        }
 
     

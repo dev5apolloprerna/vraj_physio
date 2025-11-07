@@ -26,6 +26,7 @@ use App\Exports\PatientCollection;
 use App\Exports\TotalAttended;
 use App\Exports\DailyCollection;
 use App\Exports\GroupSessionExport;
+use App\Exports\PatientVisit;
 
 class ReportController extends Controller
 {
@@ -53,7 +54,8 @@ class ReportController extends Controller
                                         DB::raw('(SELECT invoice_no FROM orderpayment WHERE orderpayment.orderDetailId = pst.iOrderDetailId  LIMIT 1) AS invoice_no'),
                                         DB::raw('(SELECT CONCAT(patient_master.patient_first_name, " ", patient_master.patient_last_name) FROM patient_master WHERE patient_master.patient_id = sessionmaster.patient_id LIMIT 1) AS patient_name'),
                                         DB::raw('(SELECT per_session_amount FROM plan_master WHERE plan_master.plan_id = pod.iPlanId LIMIT 1) AS per_session_amount'),
-                                        DB::raw('(SELECT clinic_id FROM plan_master WHERE plan_master.treatment_id = sessionmaster.treatment_id LIMIT 1) AS clinic_id')
+                                        DB::raw('(SELECT clinic_id FROM plan_master WHERE plan_master.treatment_id = sessionmaster.treatment_id LIMIT 1) AS clinic_id'),
+                                        DB::raw('(SELECT isGroupSession FROM patientin WHERE patientin.iPatientInId  = sessionmaster.iPatientInId LIMIT 1) AS isGroupSession')
                                     ])
                                     ->where('sessionmaster.session_status', 2)
                                     ->when($request->fromdate, function ($query) use ($request) {
@@ -88,6 +90,13 @@ class ReportController extends Controller
                             $amount = $val->per_session_amount;
                             $total = $amount * $session;
                             
+                             if($val->isGroupSession == 1)
+                            {
+                                $groupsession="yes";
+                            }
+                            else{
+                                $groupsession="no";
+                            }
                             
                             $sessionList[] = array
                             (               
@@ -98,6 +107,7 @@ class ReportController extends Controller
                                     "treatment_name" => $val->treatment_name,
                                     "total_session"=>$val->iUsedSession,
                                     "total_session_amount"=>$val->per_session_amount,
+                                    "group_session"=>$groupsession,
                                     "total_amount"=>$total
 
                                 );
@@ -108,6 +118,7 @@ class ReportController extends Controller
                                     "patient_name" => $val->patient_name,
                                     "therapist_name" => $val->therapist_name ?? '-',
                                     "treatment_name" => $val->treatment_name,
+                                    "group_session"=>$groupsession,
                                     "total_session_amount"=>$val->per_session_amount,
 
                                 );
@@ -119,7 +130,7 @@ class ReportController extends Controller
                       $export = new SessionExport($sessionList2, $request->fromdate, $request->todate, $request->month, $request->year);
 
                     // Define the target directory and ensure it exists
-                    $basePath = '/home1/getdemo/public_html/vrajPhysio/reports';
+                    $basePath = '/home3/vrajdahj/vrajphysioapp.vrajdentalclinic.com/reports';
                     if (!file_exists($basePath)) {
                         mkdir($basePath, 0755, true); // Create the directory with appropriate permissions
                     }
@@ -240,7 +251,7 @@ class ReportController extends Controller
                       $export = new TreatmentExport($treatmentList2, $request->fromdate, $request->todate, $request->month, $request->year);
 
                     // Define the target directory and ensure it exists
-                    $basePath = '/home1/getdemo/public_html/vrajPhysio/reports';
+                    $basePath = '/home3/vrajdahj/vrajphysioapp.vrajdentalclinic.com/reports';
                     if (!file_exists($basePath)) {
                         mkdir($basePath, 0755, true); // Create the directory with appropriate permissions
                     }
@@ -369,7 +380,7 @@ class ReportController extends Controller
                           $export = new PatientPayment($drtreatmentList2, $request->fromdate, $request->todate, $request->month, $request->year);
     
                         // Define the target directory and ensure it exists
-                        $basePath = '/home1/getdemo/public_html/vrajPhysio/reports';
+                        $basePath = '/home3/vrajdahj/vrajphysioapp.vrajdentalclinic.com/reports';
                         if (!file_exists($basePath)) {
                             mkdir($basePath, 0755, true); // Create the directory with appropriate permissions
                         }
@@ -563,7 +574,7 @@ class ReportController extends Controller
                           $export = new TotalCollection($pList, $request->fromdate, $request->todate, $request->month, $request->year);
     
                         // Define the target directory and ensure it exists
-                        $basePath = '/home1/getdemo/public_html/vrajPhysio/reports';
+                        $basePath = '/home3/vrajdahj/vrajphysioapp.vrajdentalclinic.com/reports';
                         if (!file_exists($basePath)) {
                             mkdir($basePath, 0755, true); // Create the directory with appropriate permissions
                         }
@@ -671,7 +682,7 @@ class ReportController extends Controller
                       $export = new TotalAttended($sessionList, $request->fromdate, $request->todate, $request->month, $request->year);
 
                     // Define the target directory and ensure it exists
-                    $basePath = '/home1/getdemo/public_html/vrajPhysio/reports';
+                    $basePath = '/home3/vrajdahj/vrajphysioapp.vrajdentalclinic.com/reports';
                     if (!file_exists($basePath)) {
                         mkdir($basePath, 0755, true); // Create the directory with appropriate permissions
                     }
@@ -774,7 +785,7 @@ class ReportController extends Controller
                       $export = new DailyCollection($pList, $request->fromdate, $request->todate, $request->month, $request->year);
 
                     // Define the target directory and ensure it exists
-                    $basePath = '/home1/getdemo/public_html/vrajPhysio/reports';
+                    $basePath = '/home3/vrajdahj/vrajphysioapp.vrajdentalclinic.com/reports';
                     if (!file_exists($basePath)) {
                         mkdir($basePath, 0755, true); // Create the directory with appropriate permissions
                     }
@@ -888,7 +899,7 @@ class ReportController extends Controller
                       $export = new PatientCollection($pList, $request->fromdate, $request->todate, $request->month, $request->year);
 
                     // Define the target directory and ensure it exists
-                    $basePath = '/home1/getdemo/public_html/vrajPhysio/reports';
+                    $basePath = '/home3/vrajdahj/vrajphysioapp.vrajdentalclinic.com/reports';
                     if (!file_exists($basePath)) {
                         mkdir($basePath, 0755, true); // Create the directory with appropriate permissions
                     }
@@ -955,12 +966,14 @@ class ReportController extends Controller
                             'Message' => 'Device Token Not Match',
                         ], 401);
                     }
+                    //\DB::enableQueryLog(); // Enable query log
+
                     $attendedSession =SessionMaster::select(['sessionmaster.created_at','sessionmaster.SessionStartTime','sessionmaster.SessionEndTime','sessionmaster.patient_id','patientin.isGroupSession',DB::raw('(SELECT treatment_name FROM treatment_master WHERE treatment_master.treatment_id = sessionmaster.treatment_id LIMIT 1) AS treatment_name'),
                         DB::raw('(SELECT name FROM users WHERE users.id = sessionmaster.therapist_id LIMIT 1) AS therapist_name'),
                         DB::raw('(SELECT CONCAT(patient_master.patient_first_name, " ", patient_master.patient_last_name) FROM patient_master WHERE patient_master.patient_id = sessionmaster.patient_id LIMIT 1) AS patient_name'),
                         DB::raw('(SELECT clinic_id FROM plan_master WHERE plan_master.treatment_id = sessionmaster.treatment_id LIMIT 1) AS clinic_id')
                     ])
-                    ->where('sessionmaster.session_status', 2)
+                    // ->where('sessionmaster.session_status', 2)
                     ->when($request->patient_id, fn($query, $patient_id) => $query->where('sessionmaster.patient_id', '=', $patient_id))
                     ->when($request->fromdate, function ($query) use ($request) {
                         return $query->where('sessionmaster.created_at', '>=', date('Y-m-d 00:00:00', strtotime($request->fromdate)));
@@ -975,13 +988,12 @@ class ReportController extends Controller
                         return $query->whereYear('sessionmaster.created_at', $request->year);
                     })
                     ->join('patientin', function ($join) {
-                        $join->on('patientin.treatment_id', '=', 'sessionmaster.treatment_id')
-                             ->on('patientin.therapist_id', '=', 'sessionmaster.therapist_id')
-                             ->on('patientin.patient_id', '=', 'sessionmaster.patient_id');
+                        $join->on('patientin.iPatientInId', '=', 'sessionmaster.iPatientInId');
                     }) 
                     ->orderBy('sessionmaster.created_at','asc')
                     ->groupBy('iSessionTakenId')
                     ->get();
+///dd(\DB::getQueryLog()); // Show results of log
 
                          
                         $sessionList=[];
@@ -1031,7 +1043,7 @@ class ReportController extends Controller
                       $export = new GroupSessionExport($sessionList2, $request->patient_id, $request->fromdate, $request->todate, $request->month, $request->year);
 
                     // Define the target directory and ensure it exists
-                    $basePath = '/home1/getdemo/public_html/vrajPhysio/reports';
+                    $basePath = '/home3/vrajdahj/vrajphysioapp.vrajdentalclinic.com/reports';
                     if (!file_exists($basePath)) {
                         mkdir($basePath, 0755, true); // Create the directory with appropriate permissions
                     }
@@ -1065,6 +1077,149 @@ class ReportController extends Controller
                     ], 401);
                 }
 
+        } catch (ValidationException $e) {
+            return response()->json(['errors' => $e->errors()], 422);
+        } catch (\Throwable $th) {
+            return response()->json(['error' => $th->getMessage()], 500);
+        }
+    }
+    public function patient_visit_report(Request $request)
+    {
+        try 
+        {
+            if(auth()->guard('api')->user())
+            {
+                 $User = auth()->guard('api')->user();
+                 
+                    if($request->device_token != $User->device_token)
+                    {
+                        return response()->json([
+                            "ErrorCode" => "1",
+                            'Status' => 'Failed',
+                            'Message' => 'Device Token Not Match',
+                        ], 401);
+                    }
+                        $month     = $request->input('month');
+                        $year      = $request->input('year');
+                        $fromDate  = $request->input('from_date');
+                        $toDate    = $request->input('to_date');
+                        
+                        // STEP 1: Get all treatment names (in uppercase) with default 0
+                        $defaultTreatments = DB::table('treatment_master')
+                            ->where('isDelete', 0)
+                            ->pluck('treatment_name')
+                            ->mapWithKeys(function ($name) {
+                                return [strtoupper($name) => 0];
+                            })
+                            ->toArray();
+                        
+                        // STEP 2: Get patient-wise + treatment-wise session counts
+                        $query = DB::table('sessionmaster')
+                            ->join('patient_master', 'sessionmaster.patient_id', '=', 'patient_master.patient_id')
+                            ->join('treatment_master', 'sessionmaster.treatment_id', '=', 'treatment_master.treatment_id')
+                            ->select(
+                                DB::raw("CONCAT(patient_master.patient_first_name, ' ', patient_master.patient_last_name) as patient_name"),
+                                DB::raw("UPPER(treatment_master.treatment_name) as treatment_name"),
+                                DB::raw("COUNT(*) as session_count")
+                            )
+                            ->where('sessionmaster.session_status', 2); // ended sessions only
+                        
+                        // Optional date filters
+                        if ($month && $year) {
+                            $query->whereYear('sessionmaster.created_at', $year)
+                                  ->whereMonth('sessionmaster.created_at', $month);
+                        }
+                        if ($fromDate && $toDate) {
+                            $query->whereBetween('sessionmaster.created_at', [$fromDate, $toDate]);
+                        }
+                        
+                        $query->groupBy('sessionmaster.patient_id', 'patient_name', 'treatment_name');
+                        $results = $query->get();
+                        
+                        // STEP 3: Group results per patient and include all treatments
+                        $finalData = [];
+                        
+                        foreach ($results as $row) {
+                            $patientName = $row->patient_name;
+                            $treatmentName = $row->treatment_name;
+                            $sessionCount = $row->session_count;
+                        
+                            // Initialize patient if not present
+                            if (!isset($finalData[$patientName])) {
+                                $finalData[$patientName] = [
+                                    'patient_name' => $patientName,
+                                    'treatments' => $defaultTreatments // clone full treatment list
+                                ];
+                            }
+                        
+                            // Set the session count for the existing treatment
+                            $finalData[$patientName]['treatments'][$treatmentName] = $sessionCount;
+                        }
+                        
+                        foreach ($finalData as $patient => &$data) {
+                                $treatments = $data['treatments'];
+                                $total = array_sum($treatments);
+                            
+                                // Rebuild array to control key order: patient_name → total → treatments
+                                $data = [
+                                    'patient_name' => $data['patient_name'],
+                                    'total' => $total,
+                                    'treatments' => $treatments,
+                                ];
+                            
+                                $finalData[$patient] = $data;
+                            }
+
+                        // Re-index array
+                        $patientVisitArray = array_values($finalData);
+
+
+
+                        
+                    if($request->status == 1)
+                    {
+                        
+                    
+                      $export = new PatientVisit($patientVisitArray, $request->fromdate, $request->todate, $request->month, $request->year);
+
+                    // Define the target directory and ensure it exists
+                    $basePath = '/home3/vrajdahj/vrajphysioapp.vrajdentalclinic.com/reports';
+                    if (!file_exists($basePath)) {
+                        mkdir($basePath, 0755, true); // Create the directory with appropriate permissions
+                    }
+                    
+                    // Define the file path
+                    $fileName = 'Patient_visit_Report_' . now()->format('Y_m_d_H_i_s') . '.xlsx';
+                    $filePath = $basePath . '/' . $fileName;
+                    
+                    // Store the Excel file
+                    Excel::store($export, 'export/' . $fileName, 'public'); // Adjust path relative to 'public' disk
+                    
+                    // Generate the public file URL
+                    $fileUrl = asset('reports/export/' . $fileName);
+                    
+                    return response()->json([
+                        'status' => 'success',
+                        'file_url' => $fileUrl
+                        ]);
+                        
+                    }
+                    
+                    return response()->json([
+                        'status' => 'success',
+                        'message' => 'Patient Visit Count',
+                        'Patient Visit Count' => $patientVisitArray,
+                        ]);
+
+
+                      //  return response()->json($results);
+                 
+            }else{
+                return response()->json([
+                        'status' => 'error',
+                        'message' => 'User is not Authorised.',
+                ], 401);
+            }
         } catch (ValidationException $e) {
             return response()->json(['errors' => $e->errors()], 422);
         } catch (\Throwable $th) {
