@@ -3101,5 +3101,137 @@ public function refrenceBy_list(Request $request)
         }
     }
 
+public function therapist_attended_patient_list(Request $request)
+{
+    try {
+        // --- Auth / device token guard ---
+        $user = auth()->guard('api')->user();
+        if (!$user) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'User is not Authorised.',
+            ], 401);
+        }
+        if ($request->device_token != $user->device_token) {
+            return response()->json([
+                "ErrorCode" => "1",
+                'Status'    => 'Failed',
+                'Message'   => 'Device Token Not Match',
+            ], 401);
+        }
+
+        // --- Inputs ---
+        $therapistId = (int) $request->therapist_id;
+        $dayNumber   = $request->day;                    // optional exact day (1..7)
+        $nameQuery   = trim((string) $request->patient_name); // optional partial name
+        $inDate      = $request->date;                // optional single date
+        $inFrom      = $request->in_from;                // optional from date
+        $inTo        = $request->in_to;                  // optional to date
+
+        // normalize dates (accepts dd-mm-YYYY or YYYY-mm-dd)
+        $toYmd = function (?string $v) {
+            if (!$v) return null;
+            if (preg_match('/^\d{2}-\d{2}-\d{4}$/', $v)) {
+                try { return Carbon::createFromFormat('d-m-Y', $v)->format('Y-m-d'); } catch (\Throwable $e) { return null; }
+            }
+            try { return Carbon::parse($v)->format('Y-m-d'); } catch (\Throwable $e) { return null; }
+        };
+        $inDateYmd = $toYmd($inDate);
+        $inFromYmd = $toYmd($inFrom);
+        $inToYmd   = $toYmd($inTo);
+
+        // --- Query: use joins so we can filter by patient name ---
+        $q = PatientSchedule::query()
+            ->from('patient_schedule')
+            ->join('patientin', 'patientin.patient_schedule_id', '=', 'patient_schedule.patient_schedule_id')
+            ->leftJoin('patient_master', 'patient_master.patient_id', '=', 'patient_schedule.patient_id')
+            ->leftJoin('users', 'users.id', '=', 'patient_schedule.therapist_id')
+            ->leftJoin('treatment_master', 'treatment_master.treatment_id', '=', 'patient_schedule.treatment_id')
+            ->where('patientin.therapist_id', $therapistId)
+            ->when($dayNumber, fn($query, $day) => $query->where('patient_schedule.day', $day))
+
+            // filter by patient name (first, last, or full)
+            ->when($nameQuery !== '', function ($query) use ($nameQuery) {
+                $like = '%' . str_replace('%', '\%', $nameQuery) . '%';
+                $query->where(function ($w) use ($like) {
+                    $w->where('patient_master.patient_first_name', 'like', $like)
+                      ->orWhere('patient_master.patient_last_name', 'like', $like)
+                      ->orWhere(DB::raw("CONCAT(patient_master.patient_first_name,' ',patient_master.patient_last_name)"), 'like', $like);
+                });
+            })
+
+            // filter by inDateTime (DATE part)
+            ->when($inDateYmd, fn($query) => $query->whereDate('patientin.inDateTime', $inDateYmd))
+            ->when(!$inDateYmd && $inFromYmd && $inToYmd, function ($query) use ($inFromYmd, $inToYmd) {
+                $query->whereBetween(DB::raw('DATE(patientin.inDateTime)'), [$inFromYmd, $inToYmd]);
+            })
+            ->when(!$inDateYmd && $inFromYmd && !$inToYmd, fn($query) => $query->whereDate('patientin.inDateTime', '>=', $inFromYmd))
+            ->when(!$inDateYmd && !$inFromYmd && $inToYmd, fn($query) => $query->whereDate('patientin.inDateTime', '<=', $inToYmd))
+
+            ->orderBy('patient_schedule.day', 'asc')
+            ->select([
+                'patient_schedule.*',
+                DB::raw("CONCAT(COALESCE(patient_master.patient_first_name,''),' ',COALESCE(patient_master.patient_last_name,'')) AS patient_name"),
+                DB::raw("users.name AS therpist_name"),
+                DB::raw("treatment_master.treatment_name AS treatment_name"),
+                DB::raw("patientin.inDateTime AS inDateTime"),
+            ]);
+
+        $rows = $q->get();
+
+        if ($rows->isEmpty()) {
+            return response()->json([
+                'status'            => 'error',
+                'message'           => 'No Data Found!',
+                'Therapist Patient' => []
+            ]);
+        }
+
+        $daysOfWeek = [
+            1 => 'Monday', 2 => 'Tuesday', 3 => 'Wednesday', 4 => 'Thursday',
+            5 => 'Friday', 6 => 'Saturday', 7 => 'Sunday',
+        ];
+
+        $scheduleList = [];
+        foreach ($rows as $val) {
+            // If you still need session times
+            $session = \App\Models\SessionMaster::where(['scheduleid' => $val->scheduleid ?? null])->first();
+            if (!empty($session)) {
+                $starttime = date('h:i A', strtotime($session->SessionStartTime));
+                $endtime   = date('h:i A', strtotime($session->SessionEndTime));
+            } else {
+                $starttime = '-';
+                $endtime   = '-';
+            }
+
+            $scheduleList[] = [
+                "patient_id"     => $val->patient_id,
+                "patient_name"   => $val->patient_name,
+                "days"           => $val->day,
+                "days_name"      => $daysOfWeek[$val->day] ?? 'Invalid Day',
+                "therapist_id"   => $val->therapist_id,
+                "therpist_name"  => $val->therpist_name,
+                "treatment_id"   => $val->treatment_id,
+                "treatment_name" => $val->treatment_name,
+                "start_time"     => date('h:i A', strtotime($val->schedule_start_time)),
+                "end_time"       => date('h:i A', strtotime($val->schedule_end_time)),
+                "in_date"        => $val->inDateTime ? date('Y-m-d', strtotime($val->inDateTime)) : null,
+                "in_time"        => $val->inDateTime ? date('h:i A', strtotime($val->inDateTime)) : null,
+            ];
+        }
+
+        return response()->json([
+            'status'            => 'success',
+            'message'           => 'Therapist Patient Schedule',
+            'Therapist Patient' => $scheduleList
+        ]);
+    } catch (\Illuminate\Validation\ValidationException $e) {
+        return response()->json(['errors' => $e->errors()], 422);
+    } catch (\Throwable $th) {
+        return response()->json(['error' => $th->getMessage()], 500);
+    }
+}
+
+
 
 }

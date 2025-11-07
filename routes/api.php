@@ -52,6 +52,7 @@ Route::post('/therapist_schedule', [ListingController::class, 'therapist_schedul
 Route::post('/login_therapist_schedule', [ListingController::class, 'login_therapist_schedule'])->name('login_therapist_schedule');
 Route::post('/team_schedule', [ListingController::class, 'team_schedule'])->name('team_schedule');
 Route::post('/therapist_patient_list', [ListingController::class, 'therapist_patient_list'])->name('therapist_patient_list');
+Route::post('/therapist_attended_patient_list', [ListingController::class, 'therapist_attended_patient_list'])->name('therapist_attended_patient_list');
 Route::post('/therapist_treatment_list', [ListingController::class, 'therapist_treatment_list'])->name('therapist_treatment_list');
 
 
