@@ -15,6 +15,8 @@ use App\Models\Patient;
 use App\Models\User;
 use App\Models\Order;
 use App\Models\OrderPayment;
+use App\Models\PatientSchedule;
+use App\Models\PatientSuggestedTreatment;
 use App\Models\Plan;
 
 use Maatwebsite\Excel\Facades\Excel;
@@ -1220,6 +1222,140 @@ class ReportController extends Controller
                         'message' => 'User is not Authorised.',
                 ], 401);
             }
+        } catch (ValidationException $e) {
+            return response()->json(['errors' => $e->errors()], 422);
+        } catch (\Throwable $th) {
+            return response()->json(['error' => $th->getMessage()], 500);
+        }
+    }
+    public function upcoming_renewal_report(Request $request)
+    {
+        try
+        {
+            if(auth()->guard('api')->user())
+            {
+                 $User = auth()->guard('api')->user();
+                 
+                    if($request->device_token != $User->device_token)
+                    {
+                        return response()->json([
+                            "ErrorCode" => "1",
+                            'Status' => 'Failed',
+                            'Message' => 'Device Token Not Match',
+                        ], 401);
+                    }
+    
+
+                     $schedule = PatientSchedule::select(
+                'patient_schedule.*',
+                'patient_master.clinic_id',
+                'patientorderdetail.iAmount as total_amount',
+                'patientorderdetail.iDueAmount as due_amount',
+                'patientorderdetail.iPlanId',
+                'patientorderdetail.iOrderDetailId',
+                'patientorderdetail.iOrderId',
+                'patientorderdetail.iSession as total_session_buy',
+
+                DB::raw("(SELECT CONCAT(pm.patient_first_name,' ',pm.patient_last_name)
+                        FROM patient_master pm 
+                        WHERE pm.patient_id = patient_schedule.patient_id LIMIT 1) AS patient_name")
+            )
+            ->join('patient_master', 'patient_master.patient_id', '=', 'patient_schedule.patient_id')
+            ->join('patientordermaster', 'patientordermaster.iOrderId', '=', 'patient_schedule.orderId')
+            ->join('patientorderdetail', function ($join) {
+                $join->on('patientorderdetail.iOrderId', '=', 'patientordermaster.iOrderId')
+                     ->on('patientorderdetail.iTreatmentId', '=', 'patient_schedule.treatment_id');
+            })
+            ->where([
+                'patient_master.clinic_id' => $request->clinic_id,
+                'cancel_package' => 0
+            ])
+            ->groupBy('patientorderdetail.iOrderDetailId')
+            ->orderBy('patient_schedule_id', 'desc')
+            ->get();
+
+        if ($schedule->isEmpty()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'No Data Found',
+                'upcoming_renewal' => []
+            ]);
+        }
+
+        // ---------------- PROCESS EACH PATIENT --------------------
+
+        $renewalList = [];
+
+        foreach ($schedule as $row) {
+
+            $session = PatientSuggestedTreatment::where([
+                    'patient_id'    => $row->patient_id,
+                    'iOrderId'      => $row->iOrderId,
+                    'iOrderDetailId'=> $row->iOrderDetailId,
+                    'treatment_id'  => $row->treatment_id
+                ])->first();
+
+            if (!$session) continue;
+
+            // Per session amount
+            $plan = Plan::select('plan_master.per_session_amount')
+                        ->where('plan_id', $row->iPlanId)
+                        ->first();
+
+            $perSession = $plan->per_session_amount ?? 0;
+
+            // ---------------- CALCULATIONS --------------------
+
+            $totalPaid = ($row->total_amount ?? 0) - ($row->due_amount ?? 0);
+
+            // Paid session count
+            $paidSession = ($perSession != 0) 
+                ? ($totalPaid / $perSession) 
+                : 0;
+
+            // Consumed amount
+            $consumedAmount = $session->iUsedSession * $perSession;
+
+            // Available amount
+            $availableAmount = $totalPaid - $consumedAmount;
+
+            // Remaining sessions (due)
+            $dueSession = $row->total_session_buy - $paidSession;
+
+            // Available sessions
+            $availableSession = $paidSession - ($session->iUsedSession ?? 0);
+
+            // ---------------- UPCOMING RENEWAL CONDITION --------------------
+            // ⭐ include only if available sessions <= 2
+            if ($availableSession <= 2) {
+
+                    $renewalList[] = [
+                        "patient_id"         => $row->patient_id,
+                        "patient_name"       => $row->patient_name,
+                        "clinic_id"          => $row->clinic_id,
+
+                        "total_session"      => $row->total_session_buy ?? 0,
+                        "paid_session"       => number_format($paidSession, 1),
+                        "due_session"        => number_format($dueSession, 1),
+                        "consumed_session"   => $session->iUsedSession ?? 0,
+                        "available_session"  => number_format($availableSession, 1),
+                    ];
+                }
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Upcoming Renewal List',
+                'upcoming_renewal' => $renewalList
+            ]);
+                  
+            }else{
+                return response()->json([
+                        'status' => 'error',
+                        'message' => 'User is not Authorised.',
+                ], 401);
+            }
+
         } catch (ValidationException $e) {
             return response()->json(['errors' => $e->errors()], 422);
         } catch (\Throwable $th) {
