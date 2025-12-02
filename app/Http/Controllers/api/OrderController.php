@@ -24,6 +24,7 @@ use App\Models\PatientSuggestedTreatment;
 use App\Models\PatientTreatmentLedger;
 use App\Models\SettingBillId;
 use App\Models\PatientSchedule;
+use App\Models\CashLedger;
 
 use Carbon\Carbon;
 
@@ -308,6 +309,28 @@ class OrderController extends Controller
                                                 $ordermaster->DueAmount =$ordermaster->iAmount - $total->sum('Amount');
                                                 $ordermaster->InvoiceDateTime =date('Y-m-d h:i:s');
                                                 $ordermaster->save();
+
+                                                if($request->payment_mode == 'Cash')
+                                                {
+                                                    $cashLedger = CashLedger::where(["clinic_id" => $User->clinic_id])->orderBy("id","desc")->first();
+                                                        $op_amt = $cashLedger->cl_amt ?? 0;
+                                                        $cr_amt = $value['pay_amount'];
+                                                        $dr_amt = 0;
+                                                        $cl_amt = $op_amt + $value['pay_amount'];
+                                                        
+                                                        $ledger = array(
+                                                            "clinic_id" => $User->clinic_id, 
+                                                            "op_amt" => $op_amt,
+                                                            "cr_amt" => $cr_amt,
+                                                            "dr_amt" => $dr_amt,
+                                                            "cl_amt" => $cl_amt,
+                                                            "order_id" => $order->iOrderId,
+                                                            "order_payment_id" => $OrderPayment->OrderPaymentId,
+                                                            "strIP" => $request->ip(),
+                                                            "created_at" =>date('Y-m-d H:i:s')
+                                                        );
+                                                        CashLedger::create($ledger);
+                                                }
                                                 
                                                 
                                                 $key = $_ENV['WHATSAPPKEY'];
