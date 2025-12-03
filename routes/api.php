@@ -191,6 +191,7 @@ Route::post('/upcoming_renewal_report', [ReportController::class, 'upcoming_rene
 
 //-----------------------------Dashboard -------------------------------//
 Route::post('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+Route::post('/deshboardcashonhand', [DashboardController::class, 'deshboardcashonhand'])->name('deshboardcashonhand');
 
 
 

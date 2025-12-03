@@ -385,7 +385,8 @@ class CashCollectionController extends Controller
     }
     
     public function CashLedger(Request $request){
-        if(auth()->guard('api')->user()){
+        if(auth()->guard('api')->user())
+        {
                 $datas = DB::table('cash_ledgers')
                 ->select(
                     DB::raw("DATE(created_at) AS transaction_date"),
