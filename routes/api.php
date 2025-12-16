@@ -148,6 +148,7 @@ Route::post('/delete_treatment', [CRUDController::class, 'delete_treatment'])->n
 
 Route::post('/patient_in_store', [CRUDController::class, 'patient_in_store'])->name('patient_in_store');
 Route::post('/edit_my_treatment_list', [CRUDController::class, 'edit_my_treatment_list'])->name('edit_my_treatment_list');
+Route::post('/renew_package', [CRUDController::class, 'renew_package'])->name('renew_package');
 
 /*----------------------------Ptient session crud----------------------------------***/
 

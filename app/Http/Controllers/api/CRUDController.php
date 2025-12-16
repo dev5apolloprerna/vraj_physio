@@ -2444,4 +2444,127 @@ class CRUDController extends Controller
             return response()->json(['error' => $th->getMessage()], 500);
         }
     }
+
+        public function renew_package(Request $request)
+        {
+            try {
+                $user = auth()->guard('api')->user();
+
+                if (!$user) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'User is not Authorised.',
+                    ], 401);
+                }
+
+                $request->validate([
+                    'device_token' => 'required|string',
+                    'order_id' => 'required|integer',
+                    'order_detail_id' => 'required|integer',
+                ]);
+
+                if ($request->device_token != $user->device_token) {
+                    return response()->json([
+                        "ErrorCode" => "1",
+                        'Status' => 'Failed',
+                        'Message' => 'Device Token Not Match',
+                    ], 401);
+                }
+
+                $orderId = (int) $request->order_id;
+                $orderDetailId = (int) $request->order_detail_id;
+
+                $result = DB::transaction(function () use ($orderId, $orderDetailId) {
+
+                    // ✅ 1) Fetch base order + detail
+                    $order = Order::where('iOrderId', $orderId)->firstOrFail();
+
+                    $orderDetail = OrderDetail::where('iOrderDetailId', $orderDetailId)
+                        ->where('iOrderId', $orderId)
+                        ->firstOrFail();
+
+                    // ✅ 2) Fetch ALL schedules + ALL treatments
+                    $patientSchedules = PatientSchedule::where('orderId', $orderId)->get();
+
+                    $patientTreatments = PatientSuggestedTreatment::where('iOrderId', $orderId)
+                        ->where('iOrderDetailId', $orderDetailId)
+                        ->get();
+
+                    // ✅ 3) Create new order
+                    $newOrder = $order->replicate();
+                    $newOrder->iOrderId = null;
+                    $newOrder->iOrderId = null;
+                    $newOrder->DueAmount = $order->iAmount;
+                    $newOrder->created_at = now();
+                    $newOrder->updated_at = now();
+                    $newOrder->save();
+
+                    // ✅ 4) Create new order detail
+                    $newOrderDetail = $orderDetail->replicate();
+                    $newOrderDetail->iOrderDetailId = null;
+                    $newOrderDetail->iOrderId = $newOrder->iOrderId;
+                    $newOrderDetail->iDueAmount = $orderDetail->iAmount;
+                    $newOrderDetail->save();
+
+                    // ✅ 5) Duplicate ALL PatientSchedule rows
+                    $newScheduleIds = [];
+                    foreach ($patientSchedules as $schedule) {
+                        $newSchedule = $schedule->replicate();
+                        $newSchedule->patient_schedule_id = null; // <-- change if your PK name differs
+                        $newSchedule->orderId = $newOrder->iOrderId;
+                        $newSchedule->save();
+
+                        $newScheduleIds[] = $newSchedule->patient_schedule_id;
+                    }
+
+                    // ✅ 6) Duplicate ALL PatientSuggestedTreatment rows
+                    $newTreatmentIds = [];
+                    foreach ($patientTreatments as $treatment) {
+                        $newTreatment = $treatment->replicate();
+                        $newTreatment->PatientSTreatmentId = null; // <-- change if your PK name differs
+                        $newTreatment->iOrderId = $newOrder->iOrderId;
+                        $newTreatment->iOrderDetailId = $newOrderDetail->iOrderDetailId;
+                        $newTreatment->iUsedSession = 0;
+                        $newTreatment->iAvailableSession = $orderDetail->iSession;
+                        $newTreatment->save();
+
+                        $newTreatmentIds[] = $newTreatment->PatientSTreatmentId;
+                    }
+
+                    return [
+                        'new_order_id' => $newOrder->iOrderId,
+                        'new_order_detail_id' => $newOrderDetail->iOrderDetailId,
+                        'new_patient_schedule_ids' => $newScheduleIds,
+                        'new_patient_treatment_ids' => $newTreatmentIds,
+                    ];
+                });
+
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Package Renew Successfully',
+                    'data' => $result,
+                ], 200);
+
+            } catch (ValidationException $e) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Validation failed',
+                    'errors' => $e->errors(),
+                ], 422);
+
+            } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Record not found for given ids.',
+                ], 404);
+
+            } catch (\Throwable $th) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $th->getMessage(),
+                ], 500);
+            }
+        }
+
+
 }
