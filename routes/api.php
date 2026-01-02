@@ -168,6 +168,7 @@ Route::post('/buy_treatment_package', [OrderController::class, 'buy_treatment_pa
 Route::post('/order_total_payment', [OrderController::class, 'order_total_payment'])->name('order_total_payment');
 Route::post('/order_payment', [OrderController::class, 'order_payment'])->name('order_payment');
 Route::post('/payment_list', [OrderController::class, 'payment_list'])->name('payment_list');
+Route::post('/cancel_payment', [OrderController::class, 'cancel_payment'])->name('cancel_payment');
 Route::post('/order_payment_detail', [OrderController::class, 'order_payment_detail'])->name('order_payment_detail');
 Route::post('/generate_invoice', [OrderController::class, 'generate_invoice'])->name('generate_invoice');
 Route::post('/invoice_list', [OrderController::class, 'invoice_list'])->name('invoice_list');

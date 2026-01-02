@@ -278,7 +278,7 @@ class OrderController extends Controller
                                                 DB::table('patientorderdetail')
                                                     ->where('iOrderDetailId', $value['order_detail_id'])
                                                     ->update([
-                                                        'iDueAmount' => $remainingDue - $value['pay_amount']// Deduct current payment
+                                                        'iDueAmount' => $remainingDue - ($value['pay_amount']-$value['bad_dept'])// Deduct current payment
                                                     ]);
 
                                                 $lastPayment = OrderPayment::orderBy('OrderPaymentId', 'desc')->first(); // Get the last payment entry (by ID, or by a custom field if needed)
@@ -290,12 +290,15 @@ class OrderController extends Controller
                                                 $invoice_no = 'INV ' . $nextNumber;
                                                 $receipt_no = 'RCPT ' . $nextNumber;
                                                 
-
+                                                if($value['bad_dept'] != 0)
+                                                {
+                                                    $paid=$value['pay_amount']-$value['bad_dept'];
+                                                }
                                                 // Insert the new payment record
                                                 $OrderPayment = new OrderPayment();
                                                 $OrderPayment->iOrderId = $order->iOrderId;
                                                 $OrderPayment->orderDetailId = $value['order_detail_id'];
-                                                $OrderPayment->Amount = $value['pay_amount'];
+                                                $OrderPayment->Amount = $paid;
                                                 $OrderPayment->payment_mode = $request->payment_mode;
                                                 $OrderPayment->bad_dept = $value['bad_dept'];
                                                 $OrderPayment->PaymentDateTime = date('Y-m-d h:i:s');
@@ -307,6 +310,7 @@ class OrderController extends Controller
                                                 $total=OrderPayment::where(['iOrderId'=>$order->iOrderId])->get();
 
                                                 $ordermaster->DueAmount =$ordermaster->iAmount - $total->sum('Amount');
+                                                $ordermaster->iDiscount =$ordermaster->iDiscount - $value['bad_dept'];
                                                 $ordermaster->InvoiceDateTime =date('Y-m-d h:i:s');
                                                 $ordermaster->save();
 
@@ -314,9 +318,9 @@ class OrderController extends Controller
                                                 {
                                                     $cashLedger = CashLedger::where(["clinic_id" => $User->clinic_id])->orderBy("id","desc")->first();
                                                         $op_amt = $cashLedger->cl_amt ?? 0;
-                                                        $cr_amt = $value['pay_amount'];
+                                                        $cr_amt = $value['pay_amount'] - $value['bad_dept'];
                                                         $dr_amt = 0;
-                                                        $cl_amt = $op_amt + $value['pay_amount'];
+                                                        $cl_amt = $op_amt + $value['pay_amount']-$value['bad_dept'];
                                                         
                                                         $ledger = array(
                                                             "clinic_id" => $User->clinic_id, 
@@ -339,11 +343,12 @@ class OrderController extends Controller
                                                 if(!empty($patient)){
                                                     
                                                     $users = new User();
+                                                    $paid=$value['pay_amount'] - $value['bad_dept'];
                                             	
                                                 $msg = "Dear Parent,\n\n"
                                                 . "We have received your payment successfully. Thank you for your prompt payment!\n\n"
                                                 . "Payment Details:\n\n"
-                                                . "* Amount: {$value['pay_amount']}\n"
+                                                . "* Amount: {$paid}\n"
                                                 . "* Payment Mode: {$request->payment_mode} \n\n"
                                                 . "If you have any questions or need further assistance, feel free to reach out. We look forward to continuing to support your child’s growth and development! \n\n"
                                                 . "Best regards,\n\n"
@@ -423,8 +428,6 @@ class OrderController extends Controller
                             'Payment' => []
                         ]);
                     }
-
-
 
             }else{
                     return response()->json([
@@ -757,4 +760,133 @@ class OrderController extends Controller
         return response()->json(['error' => $th->getMessage()], 500);
     }
   }   
+
+public function cancel_payment(Request $request)
+{
+    try {
+        $user = auth()->guard('api')->user();
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'User is not Authorised.',
+            ], 401);
+        }
+
+        if ($request->device_token !== $user->device_token) {
+            return response()->json([
+                "ErrorCode" => "1",
+                'Status'    => 'Failed',
+                'Message'   => 'Device Token Not Match',
+            ], 401);
+        }
+
+        return DB::transaction(function () use ($request) 
+        {
+
+            // ✅ Lock Order
+            $order = Order::where('iOrderId', $request->iOrderId)
+                ->where('patient_id', $request->patient_id)
+                ->where('clic', $request->patient_id)
+                ->lockForUpdate()
+                ->first();
+
+            if (!$order) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Order not found for this patient.',
+                ], 404);
+            }
+
+            // ✅ Lock OrderDetail
+            $detail = OrderDetail::where('iOrderId', $request->iOrderId)
+                ->where('iOrderDetailId', $request->order_detail_id)
+                ->lockForUpdate()
+                ->first();
+
+            if (!$detail) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Order detail not found.',
+                ], 404);
+            }
+
+            // ✅ Find payment to cancel (multiple payments exist, so cancel specific or latest)
+            $paymentQuery = OrderPayment::where('iOrderId', $request->iOrderId)
+                ->where('orderDetailId', $request->order_detail_id)
+                ->lockForUpdate();
+
+            if ($request->filled('order_payment_id')) {
+                $paymentQuery->where('OrderPaymentId', $request->order_payment_id);
+            } else {
+                // fallback: cancel latest payment for that orderDetail
+                $paymentQuery->orderByDesc('OrderPaymentId');
+            }
+
+            $payment = $paymentQuery->first();
+
+            if (!$payment) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Payment not found for this order detail.',
+                ], 404);
+            }
+
+            $cancelledAmount = (float) $payment->Amount;
+            $cancelledPaymentId = $payment->OrderPaymentId;
+
+            // ✅ Delete the payment
+            $payment->delete();
+
+            // ✅ Recalculate Order DueAmount using remaining payments
+            $paidOrderTotal = (float) OrderPayment::where('iOrderId', $order->iOrderId)->sum('Amount');
+
+            // Use iNetAmount if present else iAmount
+            $orderNet = (float) ($order->iNetAmount ?? $order->iAmount ?? 0);
+
+            $newOrderDue = $orderNet - $paidOrderTotal;
+            if ($newOrderDue < 0) $newOrderDue = 0;
+
+            $order->DueAmount = $newOrderDue;
+            $order->save();
+
+            // ✅ Recalculate OrderDetail iDueAmount using remaining payments for that detail
+            $paidDetailTotal = (float) OrderPayment::where('iOrderId', $detail->iOrderId)
+                ->where('orderDetailId', $detail->iOrderDetailId)
+                ->sum('Amount');
+
+            $detailAmount = (float) ($detail->iAmount ?? 0);
+
+            $newDetailDue = $detailAmount - $paidDetailTotal;
+            if ($newDetailDue < 0) $newDetailDue = 0;
+
+            $detail->iDueAmount = $newDetailDue;
+            $detail->save();
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Payment cancelled successfully.',
+                'data'    => [
+                    'iOrderId'                    => $order->iOrderId,
+                    'iOrderDetailId'              => $detail->iOrderDetailId,
+                    'cancelled_order_payment_id'  => $cancelledPaymentId,
+                    'cancelled_amount'            => $cancelledAmount,
+                    'order_due_amount'            => $order->DueAmount,
+                    'order_detail_due_amount'     => $detail->iDueAmount,
+                ]
+            ], 200);
+        });
+
+    } catch (ValidationException $e) {
+        return response()->json([
+            'status' => 'error',
+            'errors' => $e->errors()
+        ], 422);
+    } catch (\Throwable $th) {
+        return response()->json([
+            'status' => 'error',
+            'error'  => $th->getMessage()
+        ], 500);
+    }
+}
+
 }
