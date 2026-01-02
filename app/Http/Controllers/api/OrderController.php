@@ -10,12 +10,13 @@ use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-	
+    
 use App\Models\Billing;
 use App\Models\Plan;
 use App\Models\Patient;
 use App\Models\Treatment;
 use App\Models\OrderPayment;
+use App\Models\CashLedger;
 use App\Models\Order;
 use App\Models\OrderDetail;
 use App\Models\User;
@@ -24,15 +25,14 @@ use App\Models\PatientSuggestedTreatment;
 use App\Models\PatientTreatmentLedger;
 use App\Models\SettingBillId;
 use App\Models\PatientSchedule;
-use App\Models\CashLedger;
 
 use Carbon\Carbon;
 
 class OrderController extends Controller
 {
-	public function buy_treatment_package(Request $request)
-	{
-		try
+    public function buy_treatment_package(Request $request)
+    {
+        try
         {
             $request->validate([
                 'tempid' => 'required|array',
@@ -56,12 +56,18 @@ class OrderController extends Controller
                     if(sizeof($MyPackage) != 0)
                     {
                         $totalAmount = 0;
-                        foreach ($MyPackage as $item) 
-                        {
-                            $totalAmount += $item->amount;
+                        foreach ($MyPackage as $item) {
+                            $totalAmount += (float) $item->amount;
                         }
-    
-    					$iNetAmount = $totalAmount - ($totalAmount * $request->discount / 100);
+                        
+                        $discountAmount = (float) ($request->discount ?? 0);
+                        
+                        // ✅ discount cannot be negative and cannot be more than total
+                        $discountAmount = max(0, min($totalAmount, $discountAmount));
+                        
+                        $iNetAmount = $totalAmount - $discountAmount;  // ✅ 1000 - 100 = 900
+                        
+
                         /*if($request->dueAmount == 0)
                         {
                             $dueamount =$totalAmount;
@@ -83,22 +89,36 @@ class OrderController extends Controller
                             $order->patient_id=$MyPackage->first()->patient_id;
                             $order->Date=date('Y-m-d');
                             $order->iNetAmount=$iNetAmount;
-                            $order->GUID=Str::uuid();   
-                            $order->iAmount=$totalAmount;   
-                            $order->iDiscount=$request->discount;   
-                            $order->DueAmount=$totalAmount;   
+                            $order->GUID=Str::uuid();  
+                            $order->iAmount     = $totalAmount;        // 1000
+                            $order->iDiscount   = $discountAmount;     // 100
+                            $order->DueAmount   = $iNetAmount;         // 900
                             $order->save();
-    
-        
-                            foreach ($MyPackage as $item) 
-                            {
-                                $OrderDetail=new OrderDetail();
-                                $OrderDetail->iOrderId=$order->iOrderId;
-                                $OrderDetail->iTreatmentId=$item->treatment_id;
-                                $OrderDetail->iPlanId=$item->plan_id;
-                                $OrderDetail->iAmount=$item->amount;
-                                $OrderDetail->iDueAmount=$item->amount;
-                                $OrderDetail->iSession=$item->no_of_session;
+
+                            $items = $MyPackage->values();
+                            $discountLeft = $discountAmount;
+                            $count = $items->count();
+                            
+                            foreach ($items as $idx => $item) {
+                                $amount = (float) $item->amount;
+                            
+                                // last item takes remaining to avoid rounding issues
+                                if ($idx === $count - 1) {
+                                    $itemDiscount = $discountLeft;
+                                } else {
+                                    $itemDiscount = ($totalAmount > 0) ? round($discountAmount * ($amount / $totalAmount), 2) : 0;
+                                    $discountLeft -= $itemDiscount;
+                                }
+                            
+                                $due = max(0, $amount - $itemDiscount);
+                            
+                                $OrderDetail = new OrderDetail();
+                                $OrderDetail->iOrderId     = $order->iOrderId;
+                                $OrderDetail->iTreatmentId = $item->treatment_id;
+                                $OrderDetail->iPlanId      = $item->plan_id;
+                                $OrderDetail->iAmount      = $amount;
+                                $OrderDetail->iDueAmount   = $due; // ✅ discounted due
+                                $OrderDetail->iSession     = $item->no_of_session;
                                 $OrderDetail->save();
                             
                                 $suggested=new PatientSuggestedTreatment();
@@ -154,7 +174,7 @@ class OrderController extends Controller
                         'status' => 'error',
                         'message' => 'User is not Authorised.',
                 ], 401);
-        	}
+            }
         } catch (ValidationException $e) {
             return response()->json(['errors' => $e->errors()], 422);
         } catch (\Throwable $th) {
@@ -186,6 +206,7 @@ class OrderController extends Controller
                         foreach ($totalpayment as $key => $val) 
                         {
                             $totalPaid = OrderPayment::where('iOrderId', $val->iOrderId)->sum('Amount');
+                            $bad_dept = OrderPayment::where('iOrderId', $val->iOrderId)->sum('bad_dept');
 
                             $paymentList[] = array(
                                     "order_id" => $val->iOrderId,
@@ -193,6 +214,7 @@ class OrderController extends Controller
                                     "paid_amount" => $totalPaid,
                                     "discount_amount" => $val->iDiscount,
                                     "due_amount" => $val->DueAmount,
+                                    "bad_dept" => $bad_dept,
                                     "buy_date" => date('d-m-Y',strtotime($val->created_at)),
                                 );
                         }
@@ -224,160 +246,183 @@ class OrderController extends Controller
             return response()->json(['error' => $th->getMessage()], 500);
         }
     }
-    public function order_payment(Request $request)
+  public function order_payment(Request $request)
+{
+    if (auth()->guard('api')->user())
     {
-        try
+        $User = auth()->guard('api')->user();
+
+        if ($request->device_token != $User->device_token)
         {
-            if(auth()->guard('api')->user())
+            return response()->json([
+                "ErrorCode" => "1",
+                'Status' => 'Failed',
+                'Message' => 'Device Token Not Match',
+            ], 401);
+        }
+
+        foreach ($request->data as $key => $value)
+        {
+            if (($value['pay_amount'] ?? 0) != 0)
             {
-                 $User = auth()->guard('api')->user();
-                 
-                    if($request->device_token != $User->device_token)
-                    {
-                        return response()->json([
-                            "ErrorCode" => "1",
-                            'Status' => 'Failed',
-                            'Message' => 'Device Token Not Match',
-                        ], 401);
-                    }
+                $cashPaid = (float)($value['pay_amount'] ?? 0);          // CASH
+                $badDept  = (float)($value['bad_dept'] ?? 0);            // EXTRA DISCOUNT
 
-                    $totalpayment=0;
-                    $nettotal=0;
-                                 
-                    foreach ($request->data as $key => $value) 
-                    {
-                            if($value['pay_amount'] != 0)
-                            {
+                // find order detail + order master
+                $order = OrderDetail::select('iAmount','iOrderId')
+                    ->where('iOrderDetailId', $value['order_detail_id'])
+                    ->first();
 
-                        $orderPay=OrderPayment::where('orderpayment.orderDetailId',$value['order_detail_id'])->join('patientorderdetail', 'patientorderdetail.iOrderDetailId', '=', 'orderpayment.orderDetailId')
-                                ->get();
-
-                            // if ($orderPay->isNotEmpty()) 
-                            // {
-
-                                 $totalPaidAmount = $orderPay->sum('Amount') ?? 0; 
-                                    $order=OrderDetail::select('iAmount','iOrderId')->where('iOrderDetailId',$value['order_detail_id'])->first();
-                                    $ordermaster=Order::where(['iOrderId'=>$order->iOrderId])->first();
-
-                                    if ($order) 
-                                    {
-                                        // Calculate the remaining due amount for this order detail
-                                        $remainingDue = $order->iAmount - $totalPaidAmount;
-
-                                        // If the remaining due amount is zero or less, return an error
-                                            if ($remainingDue <= 0) 
-                                            {
-                                                return response()->json([
-                                                    'status' => 'error',
-                                                    'message' => 'Order Payment Already Done for order detail ID ' . $value['order_detail_id']
-                                                ]);
-                                            }
-
-                                                
-
-                                                DB::table('patientorderdetail')
-                                                    ->where('iOrderDetailId', $value['order_detail_id'])
-                                                    ->update([
-                                                        'iDueAmount' => $remainingDue - ($value['pay_amount']-$value['bad_dept'])// Deduct current payment
-                                                    ]);
-
-                                                $lastPayment = OrderPayment::orderBy('OrderPaymentId', 'desc')->first(); // Get the last payment entry (by ID, or by a custom field if needed)
-                                                
-                                                // Get the last number and increment it
-                                                $lastNumber = $lastPayment ? substr($lastPayment->invoice_no, 4) : 0; // Assuming your format starts with 'INV ' (length of 4)
-                                                $nextNumber = str_pad((int)$lastNumber + 1, 4, '0', STR_PAD_LEFT); // Increment by 1 and pad with zeros
-                                                
-                                                $invoice_no = 'INV ' . $nextNumber;
-                                                $receipt_no = 'RCPT ' . $nextNumber;
-                                                
-                                                if($value['bad_dept'] != 0)
-                                                {
-                                                    $paid=$value['pay_amount']-$value['bad_dept'];
-                                                }
-                                                // Insert the new payment record
-                                                $OrderPayment = new OrderPayment();
-                                                $OrderPayment->iOrderId = $order->iOrderId;
-                                                $OrderPayment->orderDetailId = $value['order_detail_id'];
-                                                $OrderPayment->Amount = $paid;
-                                                $OrderPayment->payment_mode = $request->payment_mode;
-                                                $OrderPayment->bad_dept = $value['bad_dept'];
-                                                $OrderPayment->PaymentDateTime = date('Y-m-d h:i:s');
-                                                $OrderPayment->invoice_no = $invoice_no;
-                                                $OrderPayment->receipt_no =$receipt_no;
-                                                $OrderPayment->save();
-
-
-                                                $total=OrderPayment::where(['iOrderId'=>$order->iOrderId])->get();
-
-                                                $ordermaster->DueAmount =$ordermaster->iAmount - $total->sum('Amount');
-                                                $ordermaster->iDiscount =$ordermaster->iDiscount - $value['bad_dept'];
-                                                $ordermaster->InvoiceDateTime =date('Y-m-d h:i:s');
-                                                $ordermaster->save();
-
-                                                if($request->payment_mode == 'Cash')
-                                                {
-                                                    $cashLedger = CashLedger::where(["clinic_id" => $User->clinic_id])->orderBy("id","desc")->first();
-                                                        $op_amt = $cashLedger->cl_amt ?? 0;
-                                                        $cr_amt = $value['pay_amount'] - $value['bad_dept'];
-                                                        $dr_amt = 0;
-                                                        $cl_amt = $op_amt + $value['pay_amount']-$value['bad_dept'];
-                                                        
-                                                        $ledger = array(
-                                                            "clinic_id" => $User->clinic_id, 
-                                                            "op_amt" => $op_amt,
-                                                            "cr_amt" => $cr_amt,
-                                                            "dr_amt" => $dr_amt,
-                                                            "cl_amt" => $cl_amt,
-                                                            "order_id" => $order->iOrderId,
-                                                            "order_payment_id" => $OrderPayment->OrderPaymentId,
-                                                            "strIP" => $request->ip(),
-                                                            "created_at" =>date('Y-m-d H:i:s')
-                                                        );
-                                                        CashLedger::create($ledger);
-                                                }
-                                                
-                                                
-                                                $key = $_ENV['WHATSAPPKEY'];
-                                                
-                                                $patient=Patient::select('phone')->where(['patient_id'=>$ordermaster->patient_id])->first();
-                                                if(!empty($patient)){
-                                                    
-                                                    $users = new User();
-                                                    $paid=$value['pay_amount'] - $value['bad_dept'];
-                                            	
-                                                $msg = "Dear Parent,\n\n"
-                                                . "We have received your payment successfully. Thank you for your prompt payment!\n\n"
-                                                . "Payment Details:\n\n"
-                                                . "* Amount: {$paid}\n"
-                                                . "* Payment Mode: {$request->payment_mode} \n\n"
-                                                . "If you have any questions or need further assistance, feel free to reach out. We look forward to continuing to support your child’s growth and development! \n\n"
-                                                . "Best regards,\n\n"
-                                                . "Vraj PHYSIOTHERAPY AND CHILD DEVELOPMENT CENTER";
-
-                                               
-                        						$status = $users->sendWhatsappMessage($patient->phone,$key,$msg, $someOtherParam = null);    
-                                                }
-                                        }           
-                                    }
-
-                    }
-                                 return response()->json([
-                                        'status' => 'success',
-                                        'message' => 'Order Payment Successfully'
-                                    ]);
-            }else{
+                if (!$order) {
                     return response()->json([
-                            'status' => 'error',
-                            'message' => 'User is not Authorised.',
-                    ], 401);
+                        'status' => 'error',
+                        'message' => 'Invalid order detail ID ' . $value['order_detail_id']
+                    ], 422);
                 }
 
-        } catch (ValidationException $e) {
-            return response()->json(['errors' => $e->errors()], 422);
-        } catch (\Throwable $th) {
-            return response()->json(['error' => $th->getMessage()], 500);
+                $ordermaster = Order::where(['iOrderId' => $order->iOrderId])->first();
+                if (!$ordermaster) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Order not found.'
+                    ], 422);
+                }
+
+                // ✅ Order level totals (so due matches master)
+                $totalCashPaidOrder = (float)OrderPayment::where('iOrderId', $order->iOrderId)->sum('Amount');
+                $totalBadDeptOrder  = (float)OrderPayment::where('iOrderId', $order->iOrderId)->sum('bad_dept');
+
+                // ✅ effective discount = original discount + all bad_dept till now (but DON'T update iDiscount yet)
+                $effectiveDiscount = (float)$ordermaster->iDiscount + $totalBadDeptOrder;
+
+                // ✅ remaining due before current payment
+                $remainingDue = ((float)$ordermaster->iAmount - $effectiveDiscount) - $totalCashPaidOrder;
+
+                if ($remainingDue <= 0)
+                {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Order Payment Already Done for order detail ID ' . $value['order_detail_id']
+                    ]);
+                }
+
+                // ✅ current settlement = cash + bad_dept (both reduce due)
+                if (($cashPaid + $badDept) > $remainingDue)
+                {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Pay amount + bad debt is greater than remaining due'
+                    ], 422);
+                }
+
+                // Invoice / Receipt
+                $lastPayment = OrderPayment::orderBy('OrderPaymentId', 'desc')->first();
+                $lastNumber  = ($lastPayment && !empty($lastPayment->invoice_no))
+                    ? (int)substr($lastPayment->invoice_no, 4)
+                    : 0;
+
+                $nextNumber  = str_pad($lastNumber + 1, 4, '0', STR_PAD_LEFT);
+                $invoice_no  = 'INV ' . $nextNumber;
+                $receipt_no  = 'RCPT ' . $nextNumber;
+
+                // ✅ Save payment: Amount = CASH ONLY, bad_dept separate
+                $OrderPayment = new OrderPayment();
+                $OrderPayment->iOrderId = $order->iOrderId;
+                $OrderPayment->orderDetailId = $value['order_detail_id'];
+                $OrderPayment->Amount = $cashPaid;
+                $OrderPayment->payment_mode = $request->payment_mode;
+                $OrderPayment->bad_dept = $badDept;
+                $OrderPayment->PaymentDateTime = date('Y-m-d H:i:s');
+                $OrderPayment->invoice_no = $invoice_no;
+                $OrderPayment->receipt_no = $receipt_no;
+                $OrderPayment->save();
+
+                // ✅ Recalculate after saving current payment
+                $totalCashPaidOrder = (float)OrderPayment::where('iOrderId', $order->iOrderId)->sum('Amount');
+                $totalBadDeptOrder  = (float)OrderPayment::where('iOrderId', $order->iOrderId)->sum('bad_dept');
+                $effectiveDiscount  = (float)$ordermaster->iDiscount + $totalBadDeptOrder;
+
+                $newDue = ((float)$ordermaster->iAmount - $effectiveDiscount) - $totalCashPaidOrder;
+                if ($newDue < 0) $newDue = 0;
+
+                // ✅ Update master due always
+                $ordermaster->DueAmount = $newDue;
+                $ordermaster->InvoiceDateTime = date('Y-m-d H:i:s');
+
+                // ✅ Update iDiscount ONLY when fully paid
+                if ($newDue == 0) {
+                    $ordermaster->iDiscount = $effectiveDiscount;
+                }
+
+                $ordermaster->save();
+
+                // ✅ Make order detail due SAME as order master due
+                DB::table('patientorderdetail')
+                    ->where('iOrderDetailId', $value['order_detail_id'])
+                    ->update([
+                        'iDueAmount' => $newDue
+                    ]);
+
+                // ✅ Cash Ledger (cash only)
+                if ($request->payment_mode == 'Cash')
+                {
+                    $cashLedger = CashLedger::where(["clinic_id" => $User->clinic_id])->orderBy("id","desc")->first();
+                    $op_amt = $cashLedger->cl_amt ?? 0;
+                    $cr_amt = $cashPaid;
+                    $dr_amt = 0;
+                    $cl_amt = $op_amt + $cashPaid;
+
+                    $ledger = array(
+                        "clinic_id" => $User->clinic_id,
+                        "op_amt" => $op_amt,
+                        "cr_amt" => $cr_amt,
+                        "dr_amt" => $dr_amt,
+                        "cl_amt" => $cl_amt,
+                        "order_id" => $order->iOrderId,
+                        "order_payment_id" => $OrderPayment->OrderPaymentId,
+                        "strIP" => $request->ip(),
+                        "created_at" => date('Y-m-d H:i:s')
+                    );
+                    CashLedger::create($ledger);
+                }
+
+                // WhatsApp
+                $key = $_ENV['WHATSAPPKEY'];
+                $patient = Patient::select('phone')->where(['patient_id' => $ordermaster->patient_id])->first();
+
+                if (!empty($patient))
+                {
+                    $users = new User();
+
+                    $msg = "Dear Parent,\n\n"
+                        . "We have received your payment successfully. Thank you for your prompt payment!\n\n"
+                        . "Payment Details:\n\n"
+                        . "* Amount Paid (Cash): {$cashPaid}\n"
+                        . "* Extra Discount (Bad Debt): {$badDept}\n"
+                        . "* Payment Mode: {$request->payment_mode}\n\n"
+                        . "Best regards,\n\n"
+                        . "Vraj PHYSIOTHERAPY AND CHILD DEVELOPMENT CENTER";
+
+                    $users->sendWhatsappMessage($patient->phone, $key, $msg, $someOtherParam = null);
+                }
+            }
         }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Order Payment Successfully'
+        ]);
     }
+    else
+    {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'User is not Authorised.',
+        ], 401);
+    }
+}
+
+
     public function payment_list(Request $request)
     {
         try
@@ -395,7 +440,7 @@ class OrderController extends Controller
                         ], 401);
                     }
 
-                    $OrderPayment=OrderPayment::select('orderpayment.*','patientordermaster.patient_id')->where(['patient_id'=>$request->patient_id])
+                    $OrderPayment=OrderPayment::select('orderpayment.*','patientordermaster.patient_id','patientordermaster.iDiscount')->where(['patient_id'=>$request->patient_id])
                     ->join('patientorderdetail', 'patientorderdetail.iOrderDetailId', '=', 'orderpayment.orderDetailId')
                     ->join('patientordermaster', 'patientordermaster.iOrderId', '=', 'patientorderdetail.iOrderId')
                     ->get();
@@ -408,6 +453,7 @@ class OrderController extends Controller
                                 $pList[] = array(
                                     "iOrderId" => $val->iOrderId,
                                     "order_detail_id" => $val->orderDetailId,
+                                    "discount" => $val->iDiscount,
                                     "Amount" => $val->Amount,
                                     "payment_mode" => $val->payment_mode,
                                     "bad_dept" => $val->bad_dept,
@@ -429,6 +475,8 @@ class OrderController extends Controller
                         ]);
                     }
 
+
+
             }else{
                     return response()->json([
                             'status' => 'error',
@@ -444,8 +492,8 @@ class OrderController extends Controller
     }
    public function order_payment_detail(Request $request)
     {
-        try
-        {
+        /*try
+        {*/
             if(auth()->guard('api')->user())
             {
                  $User = auth()->guard('api')->user();
@@ -458,7 +506,7 @@ class OrderController extends Controller
                             'Message' => 'Device Token Not Match',
                         ], 401);
                     }
-                    $order=Order::select('patientordermaster.iOrderId','patientorderdetail.*','patientordermaster.iAmount as totalamount','patientordermaster.DueAmount as totaldue','patientorderdetail.iDueAmount as dueAmount',
+                    $order=Order::select('patientordermaster.iOrderId','patientorderdetail.*','patientordermaster.iAmount as totalamount','patientordermaster.DueAmount as totaldue','patientorderdetail.iDueAmount as dueAmount','patientordermaster.iDiscount',
                         DB::raw("(select treatment_name from treatment_master where treatment_master.treatment_id=patientorderdetail.iTreatmentId limit 1) as treatment_name")
                         ,DB::raw("(select plan_name from plan_master where plan_master.plan_id=patientorderdetail.iPlanId limit 1) as plan_name")
                         )
@@ -470,6 +518,7 @@ class OrderController extends Controller
                          foreach($order as $val)
                         {
                             $totalPaid = OrderPayment::where('orderDetailId', $val->iOrderDetailId)->sum('Amount');
+                            $bad_dept = OrderPayment::where('orderDetailId', $val->iOrderDetailId)->sum('bad_dept');
 
 
                             $odetail[] = array(
@@ -481,7 +530,7 @@ class OrderController extends Controller
                                 "plan_name" => $val->plan_name,
                                 "total_amount" => $val->iAmount,
                                 "paid_amount" => $totalPaid,
-                                "due_amount" => $val->dueAmount,
+                                "due_amount" => $val->dueAmount
                             );
                         }
                             return response()->json([
@@ -489,6 +538,7 @@ class OrderController extends Controller
                                 'message' => 'Order Detail',
                                 'total_amount' => $val->totalamount,
                                 'discount_amount' => $val->iDiscount ?? 0,
+                                'bad_dept' => $bad_dept ?? 0,
                                 'total_dueamount' => $val->totaldue,
                                 'Order Detail' => $odetail
                             ]);
@@ -509,11 +559,11 @@ class OrderController extends Controller
                         ], 401);
                     }
 
-            } catch (ValidationException $e) {
+            /*} catch (ValidationException $e) {
                 return response()->json(['errors' => $e->errors()], 422);
             } catch (\Throwable $th) {
                 return response()->json(['error' => $th->getMessage()], 500);
-            }
+            }*/
     }
        public function generate_invoice(Request $request)
     {
@@ -760,133 +810,202 @@ class OrderController extends Controller
         return response()->json(['error' => $th->getMessage()], 500);
     }
   }   
+    private function recalcCashLedgerFrom(int $clinicId, int $fromId): void
+    {
+        // previous closing balance (row just before fromId)
+        $prev = CashLedger::where('clinic_id', $clinicId)
+            ->where('id', '<', $fromId)
+            ->orderByDesc('id')
+            ->lockForUpdate()
+            ->first();
 
-public function cancel_payment(Request $request)
-{
-    try {
-        $user = auth()->guard('api')->user();
-        if (!$user) {
+        $running = (float) ($prev->cl_amt ?? 0);
+
+        // rewrite all subsequent rows
+        $rows = CashLedger::where('clinic_id', $clinicId)
+            ->where('id', '>=', $fromId)
+            ->orderBy('id', 'asc')
+            ->lockForUpdate()
+            ->get();
+
+        foreach ($rows as $row) {
+            $row->op_amt = $running;
+
+            $cr = (float) ($row->cr_amt ?? 0);
+            $dr = (float) ($row->dr_amt ?? 0);
+
+            $running = $running + $cr - $dr;
+            // optional safety
+            if ($running < 0) $running = 0;
+
+            $row->cl_amt = $running;
+            $row->save();
+        }
+    }
+
+    public function cancel_payment(Request $request)
+    {
+        try {
+            $user = auth()->guard('api')->user();
+            if (!$user) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'User is not Authorised.',
+                ], 401);
+            }
+
+            // ✅ Validate input (add/remove fields as per your request payload)
+            $request->validate([
+                'device_token'     => 'required|string',
+                'patient_id'       => 'required|integer',
+                'iOrderId'         => 'required|integer',
+                'order_detail_id'  => 'required|integer',   // this is iOrderDetailId
+                'order_payment_id' => 'nullable|integer',   // recommended for multiple payments
+            ]);
+
+            // ✅ Device token check
+            if ($request->device_token !== $user->device_token) {
+                return response()->json([
+                    "ErrorCode" => "1",
+                    'Status'    => 'Failed',
+                    'Message'   => 'Device Token Not Match',
+                ], 401);
+            }
+
+            return DB::transaction(function () use ($request) {
+
+                // ✅ Lock order row
+                $order = Order::where('iOrderId', $request->iOrderId)
+                    ->where('patient_id', $request->patient_id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if (!$order) {
+                    return response()->json([
+                        'status'  => 'error',
+                        'message' => 'Order not found for this patient.',
+                    ], 404);
+                }
+
+                // ✅ Lock order detail row
+                $detail = OrderDetail::where('iOrderId', $request->iOrderId)
+                    ->where('iOrderDetailId', $request->order_detail_id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if (!$detail) {
+                    return response()->json([
+                        'status'  => 'error',
+                        'message' => 'Order detail not found.',
+                    ], 404);
+                }
+
+                // ✅ Find which payment to cancel (supports multiple payments)
+                $paymentQuery = OrderPayment::where('iOrderId', $request->iOrderId)
+                    ->where('orderDetailId', $request->order_detail_id)
+                    ->lockForUpdate();
+
+                if ($request->filled('order_payment_id')) {
+                    $paymentQuery->where('OrderPaymentId', $request->order_payment_id);
+                } else {
+                    // fallback: cancel latest payment for this order detail
+                    $paymentQuery->orderByDesc('OrderPaymentId');
+                }
+
+                $payment = $paymentQuery->first();
+
+                if (!$payment) {
+                    return response()->json([
+                        'status'  => 'error',
+                        'message' => 'Payment not found for this order detail.',
+                    ], 404);
+                }
+
+                $cancelledPaymentId = (int) $payment->OrderPaymentId;
+                $cancelledAmount    = (float) $payment->Amount;
+
+                // -----------------------------
+                // ✅ CASH LEDGER REVERT + REWRITE
+                // -----------------------------
+                $ledgerRow = CashLedger::where('order_id', $order->iOrderId)
+                    ->where('order_payment_id', $cancelledPaymentId)
+                    ->lockForUpdate()
+                    ->first();
+
+                $ledgerDeleted = false;
+
+                if ($ledgerRow) {
+                    $clinicId = (int) $ledgerRow->clinic_id;
+                    $fromId   = (int) $ledgerRow->id;
+
+                    $ledgerRow->delete();
+                    $ledgerDeleted = true;
+
+                    // rewrite balances for remaining rows after deleted row
+                    $this->recalcCashLedgerFrom($clinicId, $fromId);
+                }
+
+                // -----------------------------
+                // ✅ DELETE PAYMENT
+                // -----------------------------
+                $payment->delete();
+
+                // -----------------------------
+                // ✅ REWRITE DUE AMOUNTS (ORDER + DETAIL)
+                // -----------------------------
+
+                // total paid for whole order (remaining payments after delete)
+                $paidOrderTotal = (float) OrderPayment::where('iOrderId', $order->iOrderId)->sum('Amount');
+
+                // choose net amount: iNetAmount preferred, else iAmount
+                $orderNet = (float) (($order->iNetAmount !== null && $order->iNetAmount !== '') ? $order->iNetAmount : ($order->iAmount ?? 0));
+
+                $newOrderDue = $orderNet - $paidOrderTotal;
+                if ($newOrderDue < 0) $newOrderDue = 0;
+
+                $order->DueAmount = $newOrderDue;
+                $order->save();
+
+                // total paid for this order detail (remaining)
+                $paidDetailTotal = (float) OrderPayment::where('iOrderId', $detail->iOrderId)
+                    ->where('orderDetailId', $detail->iOrderDetailId)
+                    ->sum('Amount');
+
+                $detailAmount = (float) ($detail->iAmount ?? 0);
+
+                $newDetailDue = $detailAmount - $paidDetailTotal;
+                if ($newDetailDue < 0) $newDetailDue = 0;
+
+                $detail->iDueAmount = $newDetailDue;
+                $detail->save();
+
+                return response()->json([
+                    'status'  => 'success',
+                    'message' => 'Payment cancelled successfully.',
+                    'data'    => [
+                        'iOrderId'                   => (int) $order->iOrderId,
+                        'iOrderDetailId'             => (int) $detail->iOrderDetailId,
+                        'cancelled_order_payment_id' => $cancelledPaymentId,
+                        'cancelled_amount'           => $cancelledAmount,
+                        'order_due_amount'           => (float) $order->DueAmount,
+                        'order_detail_due_amount'    => (float) $detail->iDueAmount,
+                        'cash_ledger_deleted'        => $ledgerDeleted,
+                    ],
+                ], 200);
+            });
+
+        } catch (ValidationException $e) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'User is not Authorised.',
-            ], 401);
-        }
-
-        if ($request->device_token !== $user->device_token) {
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Throwable $th) {
             return response()->json([
-                "ErrorCode" => "1",
-                'Status'    => 'Failed',
-                'Message'   => 'Device Token Not Match',
-            ], 401);
+                'status' => 'error',
+                'error'  => $th->getMessage(),
+            ], 500);
         }
-
-        return DB::transaction(function () use ($request) 
-        {
-
-            // ✅ Lock Order
-            $order = Order::where('iOrderId', $request->iOrderId)
-                ->where('patient_id', $request->patient_id)
-                ->where('clic', $request->patient_id)
-                ->lockForUpdate()
-                ->first();
-
-            if (!$order) {
-                return response()->json([
-                    'status'  => 'error',
-                    'message' => 'Order not found for this patient.',
-                ], 404);
-            }
-
-            // ✅ Lock OrderDetail
-            $detail = OrderDetail::where('iOrderId', $request->iOrderId)
-                ->where('iOrderDetailId', $request->order_detail_id)
-                ->lockForUpdate()
-                ->first();
-
-            if (!$detail) {
-                return response()->json([
-                    'status'  => 'error',
-                    'message' => 'Order detail not found.',
-                ], 404);
-            }
-
-            // ✅ Find payment to cancel (multiple payments exist, so cancel specific or latest)
-            $paymentQuery = OrderPayment::where('iOrderId', $request->iOrderId)
-                ->where('orderDetailId', $request->order_detail_id)
-                ->lockForUpdate();
-
-            if ($request->filled('order_payment_id')) {
-                $paymentQuery->where('OrderPaymentId', $request->order_payment_id);
-            } else {
-                // fallback: cancel latest payment for that orderDetail
-                $paymentQuery->orderByDesc('OrderPaymentId');
-            }
-
-            $payment = $paymentQuery->first();
-
-            if (!$payment) {
-                return response()->json([
-                    'status'  => 'error',
-                    'message' => 'Payment not found for this order detail.',
-                ], 404);
-            }
-
-            $cancelledAmount = (float) $payment->Amount;
-            $cancelledPaymentId = $payment->OrderPaymentId;
-
-            // ✅ Delete the payment
-            $payment->delete();
-
-            // ✅ Recalculate Order DueAmount using remaining payments
-            $paidOrderTotal = (float) OrderPayment::where('iOrderId', $order->iOrderId)->sum('Amount');
-
-            // Use iNetAmount if present else iAmount
-            $orderNet = (float) ($order->iNetAmount ?? $order->iAmount ?? 0);
-
-            $newOrderDue = $orderNet - $paidOrderTotal;
-            if ($newOrderDue < 0) $newOrderDue = 0;
-
-            $order->DueAmount = $newOrderDue;
-            $order->save();
-
-            // ✅ Recalculate OrderDetail iDueAmount using remaining payments for that detail
-            $paidDetailTotal = (float) OrderPayment::where('iOrderId', $detail->iOrderId)
-                ->where('orderDetailId', $detail->iOrderDetailId)
-                ->sum('Amount');
-
-            $detailAmount = (float) ($detail->iAmount ?? 0);
-
-            $newDetailDue = $detailAmount - $paidDetailTotal;
-            if ($newDetailDue < 0) $newDetailDue = 0;
-
-            $detail->iDueAmount = $newDetailDue;
-            $detail->save();
-
-            return response()->json([
-                'status'  => 'success',
-                'message' => 'Payment cancelled successfully.',
-                'data'    => [
-                    'iOrderId'                    => $order->iOrderId,
-                    'iOrderDetailId'              => $detail->iOrderDetailId,
-                    'cancelled_order_payment_id'  => $cancelledPaymentId,
-                    'cancelled_amount'            => $cancelledAmount,
-                    'order_due_amount'            => $order->DueAmount,
-                    'order_detail_due_amount'     => $detail->iDueAmount,
-                ]
-            ], 200);
-        });
-
-    } catch (ValidationException $e) {
-        return response()->json([
-            'status' => 'error',
-            'errors' => $e->errors()
-        ], 422);
-    } catch (\Throwable $th) {
-        return response()->json([
-            'status' => 'error',
-            'error'  => $th->getMessage()
-        ], 500);
     }
-}
+
 
 }

@@ -1634,7 +1634,7 @@ public function refrenceBy_list(Request $request)
                                           ->orWhere('leave', 0);
                                 })
                         ->orderBy('iPatientInId', 'asc')->get();
-                        // dd(\DB::getQueryLog()); // Show results of log
+// dd(\DB::getQueryLog()); // Show results of log
 
 
                             $inPatientList=[];
@@ -1710,7 +1710,6 @@ public function refrenceBy_list(Request $request)
             return response()->json(['error' => $th->getMessage()], 500);
         }
     }
-
     public function inPatient_list_for_center(Request $request)
     {
          try

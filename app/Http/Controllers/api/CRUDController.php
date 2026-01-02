@@ -94,9 +94,9 @@ class CRUDController extends Controller
                     $patient->save();
                         
                         $key = $_ENV['WHATSAPPKEY'];
-                    	$users = new User();
-                    	$msg = "Welcome to Vraj PHYSIOTHERAPY AND CHILD DEVELOPMENT CENTER! We’re excited to have you with us and look forward to supporting your child's growth and development. Our dedicated team is here to help every step of the way!";
-						$status = $users->sendWhatsappMessage($request->mobile,$key,$msg, $someOtherParam = null);
+                        $users = new User();
+                        $msg = "Welcome to Vraj PHYSIOTHERAPY AND CHILD DEVELOPMENT CENTER! We’re excited to have you with us and look forward to supporting your child's growth and development. Our dedicated team is here to help every step of the way!";
+                        $status = $users->sendWhatsappMessage($request->mobile,$key,$msg, $someOtherParam = null);
 
                     return response()->json([
                         'status' => 'success',
@@ -943,10 +943,19 @@ class CRUDController extends Controller
                             ]);
                     }else
                          {
-                             return response()->json([
+                             $udata = Plan::where(["plan_id"=>$request->plan_id])->first();
+                             $udata->isDelete = 1;
+                             $udata->updated_at = now();
+                             $udata->save();
+                                
+                              return response()->json([
+                                'status' => 'success',
+                                'message' => 'Plan Deleted successfully'
+                            ]); 
+                             /*return response()->json([
                                 'status' => 'success',
                                 'message' => 'Plan can not deleted because it is use in another master table'
-                            ]);
+                            ]);*/
                     }
 
             }else{
@@ -2018,7 +2027,7 @@ class CRUDController extends Controller
                     $ledger->save();
                     
                    
-                  		
+                        
                 }
                      return response()->json([
                         'status' => 'success',
@@ -2444,8 +2453,7 @@ class CRUDController extends Controller
             return response()->json(['error' => $th->getMessage()], 500);
         }
     }
-
-        public function renew_package(Request $request)
+    public function renew_package(Request $request)
         {
             try {
                 $user = auth()->guard('api')->user();
@@ -2493,8 +2501,9 @@ class CRUDController extends Controller
                     // ✅ 3) Create new order
                     $newOrder = $order->replicate();
                     $newOrder->iOrderId = null;
-                    $newOrder->iOrderId = null;
                     $newOrder->DueAmount = $order->iAmount;
+                    $newOrder->Date = today();
+                    $newOrder->InvoiceDateTime = null;
                     $newOrder->created_at = now();
                     $newOrder->updated_at = now();
                     $newOrder->save();
@@ -2526,6 +2535,7 @@ class CRUDController extends Controller
                         $newTreatment->iOrderDetailId = $newOrderDetail->iOrderDetailId;
                         $newTreatment->iUsedSession = 0;
                         $newTreatment->iAvailableSession = $orderDetail->iSession;
+                        $newTreatment->isActive =1;
                         $newTreatment->save();
 
                         $newTreatmentIds[] = $newTreatment->PatientSTreatmentId;
@@ -2565,6 +2575,5 @@ class CRUDController extends Controller
                 ], 500);
             }
         }
-
 
 }
