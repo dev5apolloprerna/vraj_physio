@@ -1085,194 +1085,211 @@ class ReportController extends Controller
             return response()->json(['error' => $th->getMessage()], 500);
         }
     }
-    public function patient_visit_report(Request $request)
-    {
-        try 
-        {
-            if(auth()->guard('api')->user())
-            {
-                 $User = auth()->guard('api')->user();
-                 
-                    if($request->device_token != $User->device_token)
-                    {
-                        return response()->json([
-                            "ErrorCode" => "1",
-                            'Status' => 'Failed',
-                            'Message' => 'Device Token Not Match',
-                        ], 401);
-                    }
-                        $month     = $request->input('month');
-                        $year      = $request->input('year');
-                        $fromDate  = $request->input('from_date');
-                        $toDate    = $request->input('to_date');
-                        
-                        // STEP 1: Get all treatment names (in uppercase) with default 0
-                        $defaultTreatments = DB::table('treatment_master')
-                            ->where('isDelete', 0)
-                            ->pluck('treatment_name')
-                            ->mapWithKeys(function ($name) {
-                                return [strtoupper($name) => 0];
-                            })
-                            ->toArray();
-                        
-                        // STEP 2: Get patient-wise + treatment-wise session counts
-                        $query = DB::table('sessionmaster')
-                            ->join('patient_master', 'sessionmaster.patient_id', '=', 'patient_master.patient_id')
-                            ->join('treatment_master', 'sessionmaster.treatment_id', '=', 'treatment_master.treatment_id')
-                            ->select(
-                                DB::raw("CONCAT(patient_master.patient_first_name, ' ', patient_master.patient_last_name) as patient_name"),
-                                DB::raw("UPPER(treatment_master.treatment_name) as treatment_name"),
-                                DB::raw("COUNT(*) as session_count")
-                            )
-                            ->where('sessionmaster.session_status', 2); // ended sessions only
-                        
-                        // Optional date filters
-                        if ($month && $year) {
-                            $query->whereYear('sessionmaster.created_at', $year)
-                                  ->whereMonth('sessionmaster.created_at', $month);
-                        }
-                        if ($fromDate && $toDate) {
-                            $query->whereBetween('sessionmaster.created_at', [$fromDate, $toDate]);
-                        }
-                        
-                        $query->groupBy('sessionmaster.patient_id', 'patient_name', 'treatment_name');
-                        $results = $query->get();
-                        
-                        // STEP 3: Group results per patient and include all treatments
-                        $finalData = [];
-                        
-                        foreach ($results as $row) {
-                            $patientName = $row->patient_name;
-                            $treatmentName = $row->treatment_name;
-                            $sessionCount = $row->session_count;
-                        
-                            // Initialize patient if not present
-                            if (!isset($finalData[$patientName])) {
-                                $finalData[$patientName] = [
-                                    'patient_name' => $patientName,
-                                    'treatments' => $defaultTreatments // clone full treatment list
-                                ];
-                            }
-                        
-                            // Set the session count for the existing treatment
-                            $finalData[$patientName]['treatments'][$treatmentName] = $sessionCount;
-                        }
-                        
-                        foreach ($finalData as $patient => &$data) {
-                                $treatments = $data['treatments'];
-                                $total = array_sum($treatments);
-                            
-                                // Rebuild array to control key order: patient_name → total → treatments
-                                $data = [
-                                    'patient_name' => $data['patient_name'],
-                                    'total' => $total,
-                                    'treatments' => $treatments,
-                                ];
-                            
-                                $finalData[$patient] = $data;
-                            }
-
-                        // Re-index array
-                        $patientVisitArray = array_values($finalData);
-
-
-
-                        
-                    if($request->status == 1)
-                    {
-                        
-                    
-                      $export = new PatientVisit($patientVisitArray, $request->fromdate, $request->todate, $request->month, $request->year);
-
-                    // Define the target directory and ensure it exists
-                    $basePath = '/home3/vrajdahj/vrajphysioapp.vrajdentalclinic.com/reports';
-                    if (!file_exists($basePath)) {
-                        mkdir($basePath, 0755, true); // Create the directory with appropriate permissions
-                    }
-                    
-                    // Define the file path
-                    $fileName = 'Patient_visit_Report_' . now()->format('Y_m_d_H_i_s') . '.xlsx';
-                    $filePath = $basePath . '/' . $fileName;
-                    
-                    // Store the Excel file
-                    Excel::store($export, 'export/' . $fileName, 'public'); // Adjust path relative to 'public' disk
-                    
-                    // Generate the public file URL
-                    $fileUrl = asset('reports/export/' . $fileName);
-                    
-                    return response()->json([
-                        'status' => 'success',
-                        'file_url' => $fileUrl
-                        ]);
-                        
-                    }
-                    
-                    return response()->json([
-                        'status' => 'success',
-                        'message' => 'Patient Visit Count',
-                        'Patient Visit Count' => $patientVisitArray,
-                        ]);
-
-
-                      //  return response()->json($results);
-                 
-            }else{
-                return response()->json([
-                        'status' => 'error',
-                        'message' => 'User is not Authorised.',
-                ], 401);
-            }
-        } catch (ValidationException $e) {
-            return response()->json(['errors' => $e->errors()], 422);
-        } catch (\Throwable $th) {
-            return response()->json(['error' => $th->getMessage()], 500);
+   public function patient_visit_report(Request $request)
+{
+    try {
+        if (!auth()->guard('api')->user()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'User is not Authorised.',
+            ], 401);
         }
-    }
-    public function upcoming_renewal_report(Request $request)
-    {
-        try
-        {
-            if(auth()->guard('api')->user())
-            {
-                 $User = auth()->guard('api')->user();
-                 
-                    if($request->device_token != $User->device_token)
-                    {
-                        return response()->json([
-                            "ErrorCode" => "1",
-                            'Status' => 'Failed',
-                            'Message' => 'Device Token Not Match',
-                        ], 401);
-                    }
-    
 
-                     $schedule = PatientSchedule::select(
-                'patient_schedule.*',
-                'patient_master.clinic_id',
-                'patientorderdetail.iAmount as total_amount',
-                'patientorderdetail.iDueAmount as due_amount',
-                'patientorderdetail.iPlanId',
-                'patientorderdetail.iOrderDetailId',
-                'patientorderdetail.iOrderId',
-                'patientorderdetail.iSession as total_session_buy',
+        $User = auth()->guard('api')->user();
+        if ($request->device_token != $User->device_token) {
+            return response()->json([
+                "ErrorCode" => "1",
+                'Status' => 'Failed',
+                'Message' => 'Device Token Not Match',
+            ], 401);
+        }
 
-                DB::raw("(SELECT CONCAT(pm.patient_first_name,' ',pm.patient_last_name)
-                        FROM patient_master pm 
-                        WHERE pm.patient_id = patient_schedule.patient_id LIMIT 1) AS patient_name")
+        $month     = $request->input('month');
+        $year      = $request->input('year');
+        $fromDate  = $request->input('from_date');
+        $toDate    = $request->input('to_date');
+
+        // STEP 1: Get all treatment names (in uppercase) with default 0
+        $defaultTreatments = DB::table('treatment_master')
+            ->where('isDelete', 0)
+            ->pluck('treatment_name')
+            ->mapWithKeys(function ($name) {
+                return [strtoupper($name) => 0];
+            })
+            ->toArray();
+
+        // STEP 2: Actual session counts
+        $query = DB::table('sessionmaster')
+            ->join('patient_master', 'sessionmaster.patient_id', '=', 'patient_master.patient_id')
+            ->join('treatment_master', 'sessionmaster.treatment_id', '=', 'treatment_master.treatment_id')
+            ->select(
+                DB::raw("CONCAT(patient_master.patient_first_name, ' ', patient_master.patient_last_name) as patient_name"),
+                DB::raw("UPPER(treatment_master.treatment_name) as treatment_name"),
+                DB::raw("COUNT(*) as session_count")
             )
+            ->where('sessionmaster.session_status', 2);
+
+        if ($month && $year) {
+            $query->whereYear('sessionmaster.created_at', $year)
+                  ->whereMonth('sessionmaster.created_at', $month);
+        }
+
+        if ($fromDate && $toDate) {
+            $query->whereBetween('sessionmaster.created_at', [$fromDate, $toDate]);
+        }
+
+        $query->groupBy('sessionmaster.patient_id', 'patient_name', 'treatment_name');
+        $results = $query->get();
+
+        // STEP 3: Manual consumed sessions
+        $manuals = DB::table('patient_suggested_treatment as pst')
+            ->join('patient_master as pm', 'pst.patient_id', '=', 'pm.patient_id')
+            ->join('treatment_master as tm', 'pst.treatment_id', '=', 'tm.treatment_id')
+            ->select(
+                DB::raw("CONCAT(pm.patient_first_name, ' ', pm.patient_last_name) as patient_name"),
+                DB::raw("UPPER(tm.treatment_name) as treatment_name"),
+                DB::raw("SUM(pst.manually_consumed) as session_count")
+            )
+            ->where('pst.isActive', 1)
+            ->groupBy('pst.patient_id', 'patient_name', 'treatment_name')
+            ->get();
+
+        // STEP 4: Merge results
+        $merged = collect($results)->merge($manuals);
+        $finalData = [];
+
+        foreach ($merged as $row) {
+            $patientName = $row->patient_name;
+            $treatmentName = $row->treatment_name;
+            $sessionCount = $row->session_count;
+
+            if (!isset($finalData[$patientName])) {
+                $finalData[$patientName] = [
+                    'patient_name' => $patientName,
+                    'treatments'   => $defaultTreatments
+                ];
+            }
+
+            $finalData[$patientName]['treatments'][$treatmentName] += $sessionCount;
+        }
+
+        // STEP 5: Add totals
+        foreach ($finalData as $patient => &$data) {
+            $treatments = $data['treatments'];
+            $total = array_sum($treatments);
+
+            $data = [
+                'patient_name' => $data['patient_name'],
+                'total' => $total,
+                'treatments' => $treatments,
+            ];
+
+            $finalData[$patient] = $data;
+        }
+
+        $patientVisitArray = array_values($finalData);
+
+        // DO NOT TOUCH: Excel export block
+        if ($request->status == 1) {
+            $export = new PatientVisit($patientVisitArray, $request->fromdate, $request->todate, $request->month, $request->year);
+
+            $basePath = '/home3/vrajdahj/vrajphysioapp.vrajdentalclinic.com/reports';
+            if (!file_exists($basePath)) {
+                mkdir($basePath, 0755, true);
+            }
+
+            $fileName = 'Patient_visit_Report_' . now()->format('Y_m_d_H_i_s') . '.xlsx';
+            $filePath = $basePath . '/' . $fileName;
+
+            Excel::store($export, 'export/' . $fileName, 'public');
+
+            $fileUrl = asset('reports/export/' . $fileName);
+
+            return response()->json([
+                'status' => 'success',
+                'file_url' => $fileUrl
+            ]);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Patient Visit Count',
+            'Patient Visit Count' => $patientVisitArray,
+        ]);
+
+    } catch (ValidationException $e) {
+        return response()->json(['errors' => $e->errors()], 422);
+    } catch (\Throwable $th) {
+        return response()->json(['error' => $th->getMessage()], 500);
+    }
+}
+
+    public function upcoming_renewal_report(Request $request)
+{
+    try {
+        if (!auth()->guard('api')->user()) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'User is not Authorised.',
+            ], 401);
+        }
+
+        $User = auth()->guard('api')->user();
+
+        if ($request->device_token != $User->device_token) {
+            return response()->json([
+                "ErrorCode" => "1",
+                'Status'    => 'Failed',
+                'Message'   => 'Device Token Not Match',
+            ], 401);
+        }
+
+        $latestSchedule = PatientSchedule::query()
             ->join('patient_master', 'patient_master.patient_id', '=', 'patient_schedule.patient_id')
             ->join('patientordermaster', 'patientordermaster.iOrderId', '=', 'patient_schedule.orderId')
             ->join('patientorderdetail', function ($join) {
                 $join->on('patientorderdetail.iOrderId', '=', 'patientordermaster.iOrderId')
                      ->on('patientorderdetail.iTreatmentId', '=', 'patient_schedule.treatment_id');
             })
-            ->where([
-                'patient_master.clinic_id' => $request->clinic_id,
-                'cancel_package' => 0
-            ])
-            ->groupBy('patientorderdetail.iOrderDetailId')
-            ->orderBy('patient_schedule_id', 'desc')
+            ->where('patient_master.clinic_id', $request->clinic_id)
+            ->where('patientorderdetail.cancel_package', 0)  // ✅ moved here
+            ->selectRaw('MAX(patient_schedule.patient_schedule_id) as last_id')
+            ->groupBy(
+                'patient_schedule.patient_id',
+                'patient_schedule.orderId',
+                'patient_schedule.treatment_id',
+                'patientorderdetail.iOrderDetailId'
+            );
+        
+        $schedule = PatientSchedule::query()
+            ->joinSub($latestSchedule, 'ls', function ($join) {
+                $join->on('patient_schedule.patient_schedule_id', '=', 'ls.last_id');
+            })
+            ->join('patient_master', 'patient_master.patient_id', '=', 'patient_schedule.patient_id')
+            ->join('patientordermaster', 'patientordermaster.iOrderId', '=', 'patient_schedule.orderId')
+            ->join('patientorderdetail', function ($join) {
+                $join->on('patientorderdetail.iOrderId', '=', 'patientordermaster.iOrderId')
+                     ->on('patientorderdetail.iTreatmentId', '=', 'patient_schedule.treatment_id');
+            })
+            ->where('patient_master.clinic_id', $request->clinic_id)
+            ->where('patientorderdetail.cancel_package', 0) // ✅ and here too
+            ->select(
+                'patient_schedule.patient_id',
+                'patient_schedule.treatment_id',
+                'patient_schedule.orderId',
+                'patient_master.clinic_id',
+                'patient_master.phone',
+                'patientorderdetail.iAmount as total_amount',
+                'patientorderdetail.iDueAmount as due_amount',
+                'patientorderdetail.iPlanId',
+                'patientorderdetail.iOrderDetailId',
+                'patientorderdetail.iOrderId',
+                'patientorderdetail.iSession as total_session_buy',
+                DB::raw("CONCAT(patient_master.patient_first_name,' ',patient_master.patient_last_name) as patient_name")
+            )
+            ->orderByDesc('patient_schedule.patient_schedule_id')
             ->get();
+
 
         if ($schedule->isEmpty()) {
             return response()->json([
@@ -1282,85 +1299,103 @@ class ReportController extends Controller
             ]);
         }
 
-        // ---------------- PROCESS EACH PATIENT --------------------
-
         $renewalList = [];
+        $seen = []; // ✅ extra protection from duplicates
 
         foreach ($schedule as $row) {
 
+            // ✅ unique key per package/treatment
+            $uniqKey = $row->patient_id . '|' . $row->iOrderId . '|' . $row->iOrderDetailId . '|' . $row->treatment_id;
+            if (isset($seen[$uniqKey])) continue;
+
             $session = PatientSuggestedTreatment::where([
-                    'patient_id'    => $row->patient_id,
-                    'iOrderId'      => $row->iOrderId,
-                    'iOrderDetailId'=> $row->iOrderDetailId,
-                    'treatment_id'  => $row->treatment_id
-                ])->first();
+                'patient_id'     => $row->patient_id,
+                'iOrderId'       => $row->iOrderId,
+                'iOrderDetailId' => $row->iOrderDetailId,
+                'treatment_id'   => $row->treatment_id,
+            ])->first();
 
             if (!$session) continue;
 
-            // Per session amount
-            $plan = Plan::select('plan_master.per_session_amount')
-                        ->where('plan_id', $row->iPlanId)
-                        ->first();
+            $plan = Plan::select('plan_master.per_session_amount', 'plan_name')
+                ->where('plan_id', $row->iPlanId)
+                ->first();
 
-            $perSession = $plan->per_session_amount ?? 0;
+            if (!$plan) continue;
 
-            // ---------------- CALCULATIONS --------------------
+            $perSession = (float)($plan->per_session_amount ?? 0);
 
-            $totalPaid = ($row->total_amount ?? 0) - ($row->due_amount ?? 0);
+            $totalAmount = (float)($row->total_amount ?? 0);
+            $dueAmount   = (float)($row->due_amount ?? 0);
+            $totalPaid   = $totalAmount - $dueAmount;
 
-            // Paid session count
-            $paidSession = ($perSession != 0) 
-                ? ($totalPaid / $perSession) 
-                : 0;
+            $paidSession = ($perSession > 0) ? ($totalPaid / $perSession) : 0;
 
-            // Consumed amount
-            $consumedAmount = $session->iUsedSession * $perSession;
+            $usedSession = (float)($session->iUsedSession ?? 0);
+            $availableSession = $paidSession - $usedSession;
 
-            // Available amount
-            $availableAmount = $totalPaid - $consumedAmount;
+            $totalBuy = (float)($row->total_session_buy ?? 0);
+            $dueSession = $totalBuy - $paidSession;
 
-            // Remaining sessions (due)
-            $dueSession = $row->total_session_buy - $paidSession;
+            // ✅ only if available sessions <= 2
+            $perSession = (float)($plan->per_session_amount ?? 0);
 
-            // Available sessions
-            $availableSession = $paidSession - ($session->iUsedSession ?? 0);
-
-            // ---------------- UPCOMING RENEWAL CONDITION --------------------
-            // ⭐ include only if available sessions <= 2
-            if ($availableSession <= 2) {
-
-                    $renewalList[] = [
-                        "patient_id"         => $row->patient_id,
-                        "patient_name"       => $row->patient_name,
-                        "clinic_id"          => $row->clinic_id,
-
-                        "total_session"      => $row->total_session_buy ?? 0,
-                        "paid_session"       => number_format($paidSession, 1),
-                        "due_session"        => number_format($dueSession, 1),
-                        "consumed_session"   => $session->iUsedSession ?? 0,
-                        "available_session"  => number_format($availableSession, 1),
-                    ];
-                }
+            $totalAmount = (float)($row->total_amount ?? 0);
+            $dueAmount   = (float)($row->due_amount ?? 0);
+            $totalPaid   = $totalAmount - $dueAmount;
+            
+            // ✅ paid sessions (integer)
+            $paidSession = ($perSession > 0) ? ($totalPaid / $perSession) : 0;
+            $paidSessionInt = (int) round($paidSession, 0);
+            
+            $usedSession = (int) ($session->iUsedSession ?? 0);
+            
+            // ✅ available sessions (integer, can be negative)
+            $availableInt = (int) round($paidSession - $usedSession, 0);
+            
+            // ✅ EXCLUDE completed (0)
+            if ($availableInt === 0) {
+                continue;
             }
-
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Upcoming Renewal List',
-                'upcoming_renewal' => $renewalList
-            ]);
-                  
-            }else{
-                return response()->json([
-                        'status' => 'error',
-                        'message' => 'User is not Authorised.',
-                ], 401);
+            
+            // ✅ only show <= 2 (includes negative values)
+            if ($availableInt > 2) {
+                continue;
             }
+            
+            $totalBuy = (int)($row->total_session_buy ?? 0);
+            
+            // ✅ due sessions (integer)
+            $dueSessionInt = (int) round($totalBuy - $paidSession, 0);
+            
+            $seen[$uniqKey] = true;
+            
+            $renewalList[] = [
+                "patient_id"        => $row->patient_id,
+                "patient_name"      => $row->patient_name,
+                "clinic_id"         => $row->clinic_id,
+                "package_name"      => $plan->plan_name,
+                "mobile"            => $row->phone,
+                "total_session"     => $totalBuy,
+                "paid_session"      => $paidSessionInt,
+                "due_session"       => $dueSessionInt,
+                "consumed_session"  => $usedSession,
+                "available_session" => $availableInt, // ✅ no decimals, never 0
+            ];
 
-        } catch (ValidationException $e) {
-            return response()->json(['errors' => $e->errors()], 422);
-        } catch (\Throwable $th) {
-            return response()->json(['error' => $th->getMessage()], 500);
         }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Upcoming Renewal List',
+            'upcoming_renewal' => $renewalList
+        ]);
+
+    } catch (ValidationException $e) {
+        return response()->json(['errors' => $e->errors()], 422);
+    } catch (\Throwable $th) {
+        return response()->json(['error' => $th->getMessage()], 500);
     }
-    
+}
+
 }
