@@ -513,7 +513,8 @@ class CashCollectionController extends Controller
                     
 
             $data = DB::table('cash_ledgers')
-                ->select( DB::raw("DATE(created_at) AS transaction_date"),DB::raw("op_amt AS cash_on_hand")
+                ->select(
+                    DB::raw("DATE(created_at) AS transaction_date"),DB::raw("op_amt AS cash_on_hand")
                 )
                 ->where('clinic_id', $request->clinic_id)
                 ->where('cash_collection_id', 0)
@@ -538,7 +539,6 @@ class CashCollectionController extends Controller
 				})
                 ->orderBy('transaction_date','asc')
                 ->get()->toArray();
-
                 if(!empty($data)){
                     return response()->json([
         				'status' => 'success',

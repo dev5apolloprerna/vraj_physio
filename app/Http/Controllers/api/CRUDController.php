@@ -94,9 +94,9 @@ class CRUDController extends Controller
                     $patient->save();
                         
                         $key = $_ENV['WHATSAPPKEY'];
-                        $users = new User();
-                        $msg = "Welcome to Vraj PHYSIOTHERAPY AND CHILD DEVELOPMENT CENTER! We’re excited to have you with us and look forward to supporting your child's growth and development. Our dedicated team is here to help every step of the way!";
-                        $status = $users->sendWhatsappMessage($request->mobile,$key,$msg, $someOtherParam = null);
+                    	$users = new User();
+                    	$msg = "Welcome to Vraj PHYSIOTHERAPY AND CHILD DEVELOPMENT CENTER! We’re excited to have you with us and look forward to supporting your child's growth and development. Our dedicated team is here to help every step of the way!";
+						$status = $users->sendWhatsappMessage($request->mobile,$key,$msg, $someOtherParam = null);
 
                     return response()->json([
                         'status' => 'success',
@@ -2027,7 +2027,7 @@ class CRUDController extends Controller
                     $ledger->save();
                     
                    
-                        
+                  		
                 }
                      return response()->json([
                         'status' => 'success',
@@ -2247,8 +2247,8 @@ class CRUDController extends Controller
     }
     public function patient_in_store(Request $request)
     {
-        try
-        {
+        /*try
+        {*/
             if(auth()->guard('api')->user())
             {
                  $User = auth()->guard('api')->user();
@@ -2272,7 +2272,7 @@ class CRUDController extends Controller
                 $inpatientcount = PatientIn::whereIn('patientin.patient_schedule_id', $relatedSchedules)
                     ->whereDate('inDateTime', $today)
                     ->count();
-
+                    
                 // Fetch the suggested treatment to get the available sessions
                 $suggested = PatientSuggestedTreatment::where('patient_id', $schedule->patient_id)
                     ->where(['treatment_id' => $schedule->treatment_id, 'iOrderId' => $schedule->orderId, 'isActive' => 1])
@@ -2288,6 +2288,23 @@ class CRUDController extends Controller
                     ->where('status', 1)
                     ->where('leave', 0)
                     ->first();
+
+                    $alreadyIn = PatientIn::where([
+                        'patient_id' => $request->patient_id,
+                        'treatment_id' => $request->treatment_id,
+                        'therapist_id' => $request->therapist_id,
+                    ])
+                    ->whereDate('inDateTime', date('Y-m-d'))
+                    ->where('leave', 0)
+                    ->exists();
+                    
+                    if ($alreadyIn) {
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => 'Patient is already checked in today.'
+                        ]);
+                    }
+
 
                 // Allow check-in only if the total inpatient count is within the session limit
                 if ($inpatientcount < $suggested->iAvailableSession) 
@@ -2305,6 +2322,22 @@ class CRUDController extends Controller
                         $PatientIn->leave = 0;
                         $PatientIn->patient_schedule_id = $request->patient_schedule_id;
                         $PatientIn->save();
+                        
+                        //session start code here
+                        $date=date('Y-m-d');
+                        $SessionMaster=new SessionMaster();
+	                    $SessionMaster->patient_id=$request->patient_id;
+	                    $SessionMaster->scheduleid=$schedule->patient_schedule_id;
+	                    $SessionMaster->iPatientInId=$PatientIn->iPatientInId;
+	                    $SessionMaster->SessionStartTime=date('H:i:s');
+	                    $SessionMaster->treatment_id=$request->treatment_id;
+	                    $SessionMaster->therapist_id=$request->therapist_id;
+	                    $SessionMaster->created_at=$date;
+	                    $SessionMaster->save();
+	                    
+	                    // session end code with session deduction code here
+	                    $this->endPreviousSession($request->patient_id, $request->therapist_id, $request->treatment_id, $request->patient_schedule_id);
+
 
                         return response()->json([
                             'status' => 'success',
@@ -2330,11 +2363,11 @@ class CRUDController extends Controller
                         'message' => 'User is not Authorised.',
                 ], 401);
             }
-        } catch (ValidationException $e) {
+        /*} catch (ValidationException $e) {
             return response()->json(['errors' => $e->errors()], 422);
         } catch (\Throwable $th) {
             return response()->json(['error' => $th->getMessage()], 500);
-        }   
+        }  */ 
     }
     public function delete_treatment(Request $request)
     {
@@ -2575,5 +2608,240 @@ class CRUDController extends Controller
                 ], 500);
             }
         }
+        
+        //session end code here
+        
+        private function endPreviousSession($patient_id, $therapist_id, $treatment_id, $schedule_id)
+        {
+            $date = date('Y-m-d');
+        
+            $session = SessionMaster::where([
+                'patient_id' => $patient_id,
+                'treatment_id' => $treatment_id,
+                'therapist_id' => $therapist_id,
+                'scheduleid' => $schedule_id,
+                'created_at' => $date
+            ])->whereNull('SessionEndTime')->first();
+        
+            if (!$session) return;
+        
+            // Update PatientTreatmentLedger
+            $ledger = PatientTreatmentLedger::where([
+                'patient_id' => $session->patient_id,
+                'treatment_id' => $session->treatment_id,
+                'therapist_id' => $session->therapist_id
+            ])->first();
+        
+            if ($ledger) {
+                $used_session = 1;
+                $new_opening_balance = $ledger->closing_balance;
+                $new_credit_balance = $ledger->credit_balance - $used_session;
+                $new_debit_balance = $ledger->debit_balance + $used_session;
+                $new_closing_balance = $new_opening_balance - $used_session;
+        
+                $ledger = new PatientTreatmentLedger();
+                $ledger->patient_id = $session->patient_id;
+                $ledger->treatment_id = $session->treatment_id;
+                $ledger->therapist_id = $session->therapist_id;
+                $ledger->iOrderDetailId = $ledger->iOrderDetailId;
+                $ledger->iSessionTakenId = $session->iSessionTakenId;
+                $ledger->opening_balance = $new_opening_balance;
+                $ledger->credit_balance = $new_credit_balance;
+                $ledger->debit_balance = $new_debit_balance;
+                $ledger->closing_balance = $new_closing_balance;
+                $ledger->save();
+            }
+        
+            $schedule = PatientSchedule::find($session->scheduleid);
+        
+            $suggested = PatientSuggestedTreatment::where([
+                'patient_id' => $schedule->patient_id,
+                'treatment_id' => $schedule->treatment_id,
+                'iOrderId' => $schedule->orderId,
+                'isActive' => 1
+            ])->first();
+        
+            if ($suggested) {
+                $suggested->iUsedSession = $suggested->iUsedSession + 1;
+                $suggested->iAvailableSession = $suggested->iSessionBuy - $suggested->iUsedSession;
+                $suggested->save();
+        
+                if ($suggested->iAvailableSession == 0) {
+                    $suggested->isActive = 0;
+                    $suggested->save();
+                }
+            }
+        
+            $session->SessionEndTime = date('H:i:s');
+            $session->session_status = 2;
+            $session->save();
+        }
+        
+
+        public function cancel_patient_session(Request $request)
+        {
+            try {
+                if (!auth()->guard('api')->user()) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'User is not Authorised.',
+                    ], 401);
+                }
+        
+                $User = auth()->guard('api')->user();
+        
+                if ($request->device_token != $User->device_token) {
+                    return response()->json([
+                        "ErrorCode" => "1",
+                        'Status' => 'Failed',
+                        'Message' => 'Device Token Not Match',
+                    ], 401);
+                }
+        
+                $today = now()->toDateString();
+        
+                // ✅ Wrap all updates in transaction (very important)
+                return DB::transaction(function () use ($request, $today) {
+        
+                    // ✅ Lock schedule row
+                    $session = PatientSchedule::where('patient_schedule_id', $request->patient_schedule_id)
+                        ->lockForUpdate()
+                        ->first();
+        
+                    if (!$session) {
+                        return response()->json([
+                            'status' => 'success',
+                            'message' => 'Patient Schedule Not Found',
+                        ]);
+                    }
+        
+                    // ✅ If already cancelled today -> prevent double revert
+                    $alreadyCancelled = PatientIn::where([
+                            'treatment_id' => $session->treatment_id,
+                            'therapist_id' => $session->therapist_id,
+                            'patient_id'   => $session->patient_id,
+                            'patient_schedule_id' => $session->patient_schedule_id,
+                        ])
+                        ->where('leave', 1)
+                        ->whereDate('inDateTime', $today)
+                        ->exists();
+        
+                    if ($alreadyCancelled) {
+                        return response()->json([
+                            'status' => 'success',
+                            'message' => 'Patient Session Already Cancled',
+                        ]);
+                    }
+        
+                    // ✅ If patient is already IN (status=1) today, don’t allow revert cancel (your old logic)
+                    $PatientIn = PatientIn::where([
+                            'treatment_id' => $session->treatment_id,
+                            'therapist_id' => $session->therapist_id,
+                            'patient_id'   => $session->patient_id,
+                        ])
+                        ->where(function ($q) {
+                            $q->where('status', 1)->orWhere('leave', 1);
+                        })
+                        ->whereDate('inDateTime', $today)
+                        ->first();
+        
+                    if (!empty($PatientIn)) {
+                        return response()->json([
+                            'status' => 'success',
+                            'message' => 'Patient Session Already Cancled',
+                        ]);
+                    }
+        
+                    $used_session = 1;
+        
+                    /**
+                     * ✅ 1) REVERT LEDGER (add 1 session back)
+                     * Your earlier code was decreasing credit and closing.
+                     * For revert: credit +1, debit -1, closing +1
+                     */
+                    $lastLedger = PatientTreatmentLedger::where('patient_id', $session->patient_id)
+                        ->where('treatment_id', $session->treatment_id)
+                        ->where('therapist_id', $session->therapist_id)
+                        ->orderByDesc('iLedgerId') // make sure you have id / created_at ordering
+                        ->lockForUpdate()
+                        ->first();
+        
+                    if ($lastLedger) {
+                        $new_opening_balance = $lastLedger->closing_balance;
+                        $new_credit_balance  = $lastLedger->credit_balance + $used_session;
+                        $new_debit_balance   = max(0, $lastLedger->debit_balance - $used_session);
+                        $new_closing_balance = $new_opening_balance + $used_session;
+        
+                        $newLedger = new PatientTreatmentLedger();
+                        $newLedger->patient_id        = $session->patient_id;
+                        $newLedger->treatment_id      = $session->treatment_id;
+                        $newLedger->therapist_id      = $session->therapist_id;
+        
+                        // keep these if they exist in your table
+                        $newLedger->iOrderDetailId    = $lastLedger->iOrderDetailId ?? null;
+                        $newLedger->iSessionTakenId   = $session->iSessionTakenId;
+        
+                        $newLedger->opening_balance   = $new_opening_balance;
+                        $newLedger->credit_balance    = $new_credit_balance;
+                        $newLedger->debit_balance     = $new_debit_balance;
+                        $newLedger->closing_balance   = $new_closing_balance;
+                        $newLedger->save();
+                    }
+        
+                    /**
+                     * ✅ 2) REVERT SUGGESTED TREATMENT:
+                     * used -1, available +1
+                     * Example: available 3 used 7 => available 4 used 6
+                     */
+                    $suggested = PatientSuggestedTreatment::where([
+                            'patient_id'   => $session->patient_id,
+                            'treatment_id' => $session->treatment_id,
+                            'iOrderId'     => $session->orderId,
+                        ])
+                        ->lockForUpdate()
+                        ->first();
+        
+                    if ($suggested) {
+                        $suggested->iUsedSession      = max(0, (int)$suggested->iUsedSession - 1);
+                        $suggested->iAvailableSession = (int)$suggested->iAvailableSession + 1;
+        
+                        // if you want: when available becomes > 0, ensure active
+                        if ($suggested->iAvailableSession > 0) {
+                            $suggested->isActive = 1;
+                        }
+        
+                        $suggested->save();
+                    }
+        
+                    /**
+                     * ✅ 3) Insert cancel record
+                     */
+                    $inpatient = new PatientIn();
+                    $inpatient->treatment_id         = $session->treatment_id;
+                    $inpatient->therapist_id         = $session->therapist_id;
+                    $inpatient->patient_id           = $session->patient_id;
+                    $inpatient->inDateTime           = now();
+                    $inpatient->leave                = 1;
+                    $inpatient->cancel_session_by    = $request->cancel_session_by;
+                    $inpatient->patient_schedule_id  = $session->patient_schedule_id;
+                    $inpatient->save();
+        
+                    $session=SessionMaster::where(['scheduleid'=>$request->patient_schedule_id])->first();
+                    $session->session_status= 3;
+                    $session->save();
+        
+                    return response()->json([
+                        'status' => 'success',
+                        'message' => 'Patient Session Cancled Successfully',
+                    ]);
+                });
+        
+            } catch (ValidationException $e) {
+                return response()->json(['errors' => $e->errors()], 422);
+            } catch (\Throwable $th) {
+                return response()->json(['error' => $th->getMessage()], 500);
+            }
+        }
+
 
 }

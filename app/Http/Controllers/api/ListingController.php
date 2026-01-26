@@ -1543,6 +1543,23 @@ public function refrenceBy_list(Request $request)
                             "therapist_name" => $val1->name,
                         ];
                     }
+                    
+                    $date = date('Y-m-d');
+                    $inPatient = PatientIn::where('patient_id', $val->patient_id)
+                    ->where(['treatment_id'=> $val->treatment_id,'patient_schedule_id'=>$val->patient_schedule_id])
+                    ->whereDate('inDateTime', $date)->where(function ($query) 
+                    {
+                        $query->where('status', 0)
+                          ->orWhere('leave', 0);
+                        })
+                    ->first();
+                    
+                    if(!empty($inPatient) && $inPatient->status== 0 && $inPatient->leave== 0)
+                    {
+                        $inpatient=1;
+                    }else{
+                        $inpatient=0;
+                    }
                 
                     $daysOfWeek = [
                         1 => 'Monday',
@@ -1580,6 +1597,7 @@ public function refrenceBy_list(Request $request)
                         "due_session" => number_format($due_session, 1),
                         "consumed_session" => optional($session)->iUsedSession ?? 0,
                         "available_session" => number_format($availableSession, 1),
+                        "inpatient"=>$inpatient,
                         "therapist_list" => $tlist
                     ];
                     
@@ -1625,7 +1643,11 @@ public function refrenceBy_list(Request $request)
                     $date=date('Y-m-d');
                     // \DB::enableQueryLog(); // Enable query log
 
-                    $InPatient=PatientIn::select('patientin.*',DB::raw("(select treatment_name from treatment_master where patientin.treatment_id=treatment_master.treatment_id limit 1) as treatment_name"),DB::raw("(SELECT CONCAT(patient_master.patient_first_name, ' ', patient_master.patient_last_name) 
+                    $InPatient=PatientIn::select('patientin.*',DB::raw("(select treatment_name from treatment_master where patientin.treatment_id=treatment_master.treatment_id limit 1) as treatment_name"),
+                    DB::raw("(select schedule_start_time from patient_schedule where patientin.patient_schedule_id=patient_schedule.patient_schedule_id limit 1) as start_time")
+                    ,DB::raw("(select schedule_end_time from patient_schedule where patientin.patient_schedule_id=patient_schedule.patient_schedule_id limit 1) as end_time")
+                    ,DB::raw("(select day from patient_schedule where patientin.patient_schedule_id=patient_schedule.patient_schedule_id limit 1) as days")
+                    ,DB::raw("(SELECT CONCAT(patient_master.patient_first_name, ' ', patient_master.patient_last_name) 
                   FROM patient_master WHERE patient_master.patient_id = patientin.patient_id LIMIT 1) AS patient_name"))
                         ->when($request->therapist_id, fn($query, $therapist_id) => $query->where('patientin.therapist_id', '=', $therapist_id))
                          ->whereRaw("DATE(patientin.inDateTime) = ?", [$date])
@@ -1647,14 +1669,26 @@ public function refrenceBy_list(Request $request)
                                         $SessionMasterdata=SessionMaster::where(['patient_id'=>$val->patient_id,'treatment_id'=>$val->treatment_id,'created_at'=>$intime,'iPatientInId'=>$val->iPatientInId])->first();
                                     //$SessionMasterdata=SessionMaster::where(['patient_id'=>$val->patient_id,'therapist_id'=>$request->therapist_id,'treatment_id'=>$val->treatment_id,'created_at'=>$intime])->first();
 
+                                        $daysOfWeek = [
+                                            1 => 'Monday',
+                                            2 => 'Tuesday',
+                                            3 => 'Wednesday',
+                                            4 => 'Thursday',
+                                            5 => 'Friday',
+                                            6 => 'Saturday',
+                                            7 => 'Sunday',
+                                        ];
                                         if(!empty($SessionMasterdata) )
                                         {   
-                                            if($SessionMasterdata->session_status != 2 && $SessionMasterdata->session_status != 3)
+                                            if(/*$SessionMasterdata->session_status != 2 &&*/ $SessionMasterdata->session_status != 3)
                                             {
-                                                
                                                 $inPatientList[] = array(
                                                     "patient_in_id" => $val->iPatientInId,
                                                     "patient_schedule_id" => $val->patient_schedule_id,
+                                                    "start_time" => $val->start_time,
+                                                    "end_time" => $val->end_time,
+                                                    "days" => $val->days,
+                                                    "days_name" => $daysOfWeek[$val->days] ?? 'Invalid Day',
                                                     "patient_id" => $val->patient_id,
                                                     "patient_name" => $val->patient_name ?? '-',
                                                     "in_date_time" => date('d-m-Y h:i',strtotime($val->inDateTime)),
@@ -2133,177 +2167,170 @@ public function refrenceBy_list(Request $request)
         }
 
     }
-     public function patient_consumed_history(Request $request)
-    {
-        /* try
-        {*/
-            if(auth()->guard('api')->user())
-            {
-                 $User = auth()->guard('api')->user();
-                 
-                    if($request->device_token != $User->device_token)
-                    {
-                        return response()->json([
-                            "ErrorCode" => "1",
-                            'Status' => 'Failed',
-                            'Message' => 'Device Token Not Match',
-                        ], 401);
-                    }
+    public function patient_consumed_history(Request $request)
+{
+    try {
+        if (!auth()->guard('api')->user()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'User is not Authorised.',
+            ], 401);
+        }
 
-                    $sessionMaster=SessionMaster::select('sessionmaster.*','treatment_master.treatment_name','patient_master.clinic_id',DB::raw("(select name from users where users.id=sessionmaster.therapist_id limit 1) as therpist_name")
-                    ,DB::raw("(select treatment_name from treatment_master where treatment_master.treatment_id=sessionmaster.treatment_id limit 1) as treatment_name"))->where(['sessionmaster.patient_id'=>$request->patient_id,'patient_master.clinic_id'=>$request->clinic_id])
-                        ->when($request->therapist_id, fn($query, $therapist_id) => $query->where('sessionmaster.therapist_id', '=', $therapist_id))
-                        ->join('patient_master', 'patient_master.patient_id', '=', 'sessionmaster.patient_id')
-                        ->join('patient_schedule', 'patient_schedule.patient_schedule_id', '=', 'sessionmaster.scheduleId')
-                        ->join('treatment_master', 'treatment_master.treatment_id', '=', 'sessionmaster.treatment_id')
-                        ->join('patientorderdetail', function ($join) {
-                            $join->on('patientorderdetail.iOrderId', '=', 'patient_schedule.orderId')
-                                 ->on('patientorderdetail.iTreatmentId', '=', 'sessionmaster.treatment_id'); // Changed to 'on' for proper JOIN condition
-                        })
-                         ->when($request->search, function ($query, $search) {
-                                return $query->where(function ($q) use ($search) {
-                                    $q->where('treatment_name', 'LIKE', "%{$search}%")
-                                      ->orWhere('treatment_name', 'LIKE', "%{$search}%");
-                                });
-                            })
+        $User = auth()->guard('api')->user();
 
-                        ->orderBy('iSessionTakenId', 'desc')->get();
+        if ($request->device_token != $User->device_token) {
+            return response()->json([
+                "ErrorCode" => "1",
+                'Status' => 'Failed',
+                'Message' => 'Device Token Not Match',
+            ], 401);
+        }
 
-                        
-                    $treatmentCounter = []; // Initialize treatment counter
+        $scheduleList = [];
+        $srNo = 1;
 
-                        if(sizeof($sessionMaster) != 0)
-                        {
-                            foreach($sessionMaster as $val)
-                            {
+        // ✅ SESSIONMASTER based entries
+        $sessionMaster = SessionMaster::select(
+                'sessionmaster.*',
+                'treatment_master.treatment_name',
+                'patient_master.clinic_id',
+                DB::raw("(SELECT name FROM users WHERE users.id = sessionmaster.therapist_id LIMIT 1) as therpist_name")
+            )
+            ->where(['sessionmaster.patient_id' => $request->patient_id, 'patient_master.clinic_id' => $request->clinic_id])
+            ->when($request->therapist_id, fn ($query, $therapist_id) => $query->where('sessionmaster.therapist_id', $therapist_id))
+            ->join('patient_master', 'patient_master.patient_id', '=', 'sessionmaster.patient_id')
+            ->join('patient_schedule', 'patient_schedule.patient_schedule_id', '=', 'sessionmaster.scheduleId')
+            ->join('treatment_master', 'treatment_master.treatment_id', '=', 'sessionmaster.treatment_id')
+            ->join('patientorderdetail', function ($join) {
+                $join->on('patientorderdetail.iOrderId', '=', 'patient_schedule.orderId')
+                     ->on('patientorderdetail.iTreatmentId', '=', 'sessionmaster.treatment_id');
+            })
+            ->when($request->search, function ($query, $search) {
+                return $query->where(function ($q) use ($search) {
+                    $q->where('treatment_master.treatment_name', 'LIKE', "%{$search}%");
+                });
+            })
+            ->orderBy('iSessionTakenId', 'desc')
+            ->get();
 
-                            /*$detail = Order::select('patientorderdetail.iAmount as total', 'patientorderdetail.iDueAmount as due','patientorderdetail.iPlanId','patientorderdetail.iSession')
-                                        ->where([
-                                            'patientordermaster.patient_id' => $val->patient_id,
-                                            'iTreatmentId' => $val->treatment_id
-                                        ])
-                                        ->join('patientorderdetail', 'patientorderdetail.iOrderId', '=', 'patientordermaster.iOrderId')
-                                        ->first();*/
-                                        
+        foreach ($sessionMaster as $val) {
+            $session = PatientSuggestedTreatment::where([
+                'patient_id' => $val->patient_id,
+                'treatment_id' => $val->treatment_id
+            ])->first();
 
-                        $session=PatientSuggestedTreatment::where(['patient_id'=>$val->patient_id,'treatment_id' => $val->treatment_id])->first();  
-                        
-                        
-                       // $paid_session=Plan::select('plan_master.per_session_amount','plan_master.plan_id')->where(['plan_id'=>$detail->iPlanId])->first();
-                         if (!empty($val->iPlanId)) {
-                                $paid_session = Plan::select('plan_master.per_session_amount', 'plan_master.plan_id')->where('plan_id', $val->iPlanId)
-                    ->first();
-                    } else {
-                        // Handle the case where $val->iPlanId is null
-                        $paid_session = (object) [
-                            'per_session_amount' => 0, // Default value
-                            'plan_id' => null,        // Default value
-                        ];
-                    }
-        
-                    $schedule = PatientSchedule::select('day')->where(['patient_schedule_id' => $val->scheduleid])->first();
-                    
-                    $consumeAmount = 0;
-                    $totalPaid = (optional($val)->total ?? 0) - (optional($val)->due ?? 0);
-                    
-                    if ($session->iUsedSession == null) {
-                        $consumeAmount = 0;
-                    } else {
-                        $consumeAmount = $paid_session->per_session_amount * $session->iUsedSession;
-                    }
-                    
-                    $totalpaidSession = $paid_session->per_session_amount > 0 
-                        ? $totalPaid / $paid_session->per_session_amount 
-                        : 0;
-                    
-                    $availableAmount = $totalPaid - $consumeAmount;
-                    $due_session = optional($session)->iSessionBuy - $totalpaidSession;
-                    
-                    $availableSession = $totalpaidSession - optional($session)->iUsedSession;
-                    
-                    if ($totalPaid != null && $totalPaid != 0) {
-                        $balanceAmount = $totalPaid - $consumeAmount;
-                    } else {
-                        $balanceAmount = 0;
-                    }
+            $paid_session = !empty($val->iPlanId)
+                ? Plan::select('plan_master.per_session_amount')->where('plan_id', $val->iPlanId)->first()
+                : (object)['per_session_amount' => 0];
 
-                                
-                                if($val->session_status == 1)
-                                {
-                                    $status='session start';
-                                }
-                                else if($val->session_status == 2)
-                                {
-                                    $status='session end';
-                                }else{
-                                    $status='session cancle';
-                                }
+            $consumeAmount = optional($session)->iUsedSession ? $paid_session->per_session_amount * $session->iUsedSession : 0;
+            $totalPaid = (optional($val)->total ?? 0) - (optional($val)->due ?? 0);
+            $totalpaidSession = $paid_session->per_session_amount > 0 ? $totalPaid / $paid_session->per_session_amount : 0;
+            $due_session = optional($session)->iSessionBuy - $totalpaidSession;
+            $availableSession = $totalpaidSession - optional($session)->iUsedSession;
+            $balanceAmount = $totalPaid - $consumeAmount;
 
-                                $createdDate = Carbon::parse($val->created_at);     
-                        
-                        $treatmentKey = $val->patient_id . '-' . $val->treatment_id; // Unique key for each patient-treatment
-                        if (!isset($treatmentCounter[$treatmentKey])) {
-                            $treatmentCounter[$treatmentKey] = 1; // Start counting from 1
-                        } else {
-                            $treatmentCounter[$treatmentKey]++; // Increment count
-                        }
-                                $scheduleList[] = array(
-                                    "sr_no" => $treatmentCounter[$treatmentKey], // Add serial number
-                                    "patient_schedule_id" => $val->scheduleid,
-                                    "patient_session_id" => $val->iSessionTakenId,
-                                    "days" =>  $createdDate->dayOfWeekIso,
-                                    "days_name" => $day = date('l', strtotime($val->created_at)),
-                                    "therapist_id" => $val->therapist_id,
-                                    "therpist_name" => $val->therpist_name,
-                                    "clinic_id" => $val->clinic_id,
-                                    "start_time" => $val->SessionStartTime,
-                                    "end_time" => $val->SessionEndTime,
-                                    "treatment_id" => $val->treatment_id,
-                                    "treatment_name" => $val->treatment_name,
-                                    "total_amount" => optional($val)->total ?? 0,
-                                    "paid_amount" => $totalPaid ?? 0,
-                                    "consume_amount" => $consumeAmount ?? 0,
-                                    "available_amount" => $availableAmount ?? 0,
-                                    "remain_balance" => $balanceAmount ?? 0,
-                                    "due_amount" => optional($val)->due ?? 0,
-                                    "total_session" => optional($session)->iSessionBuy ?? 0,
-                                    "paid_session" => number_format($totalpaidSession, 1) ?? 0,
-                                    "due_session" => number_format($due_session,1) ?? 0,
-                                    "consumed_session" => optional($session)->iUsedSession ?? 0,
-                                    "available_session" =>number_format($availableSession,1) ?? 0,
-                                    "session_consume_date" =>date('d-F-Y',strtotime($val->created_at)),
-                                    "session_status" =>$status,
+            $status = match ($val->session_status) {
+                1 => 'session start',
+                2 => 'session end',
+                default => 'session cancel',
+            };
 
-                                );
-                            }
-                                return response()->json([
-                                    'status' => 'success',
-                                    'message' => 'Patient schedule List',
-                                    'Patient Schedule' => $scheduleList
-                                ]);
+            $createdDate = Carbon::parse($val->created_at);
 
-                        } else 
-                        {
-                            return response()->json([
-                                'status' => 'error',
-                                'message' => 'No Data Found!',
-                                'Patient Schedule' => []
-                            ]);
-                        }
-                  
-            }else{
-                return response()->json([
-                        'status' => 'error',
-                        'message' => 'User is not Authorised.',
-                ], 401);
-            }
+            $scheduleList[] = [
+                "sr_no" => $srNo++,
+                "patient_schedule_id" => $val->scheduleid,
+                "patient_session_id" => $val->iSessionTakenId,
+                "days" => $createdDate->dayOfWeekIso,
+                "days_name" => date('l', strtotime($val->created_at)),
+                "therapist_id" => $val->therapist_id,
+                "therpist_name" => $val->therpist_name,
+                "clinic_id" => $val->clinic_id,
+                "start_time" => $val->SessionStartTime,
+                "end_time" => $val->SessionEndTime,
+                "treatment_id" => $val->treatment_id,
+                "treatment_name" => $val->treatment_name,
+                "total_amount" => optional($val)->total ?? 0,
+                "paid_amount" => $totalPaid,
+                "consume_amount" => $consumeAmount,
+                "available_amount" => $totalPaid - $consumeAmount,
+                "remain_balance" => $balanceAmount,
+                "due_amount" => optional($val)->due ?? 0,
+                "total_session" => optional($session)->iSessionBuy ?? 0,
+                "paid_session" => number_format($totalpaidSession, 1),
+                "due_session" => number_format($due_session, 1),
+                "consumed_session" => optional($session)->iUsedSession ?? 0,
+                "available_session" => number_format($availableSession, 1),
+                "session_consume_date" => date('d-F-Y', strtotime($val->created_at)),
+                "session_status" => $status,
+            ];
+        }
 
-        /*} catch (ValidationException $e) {
-            return response()->json(['errors' => $e->errors()], 422);
-        } catch (\Throwable $th) {
-            return response()->json(['error' => $th->getMessage()], 500);
-        }*/
+        // ✅ MANUALLY CONSUMED entries
+        $manuals = DB::table('patienttreatementledger as ledger')
+            ->join('patient_master as pm', 'ledger.patient_id', '=', 'pm.patient_id')
+            ->join('treatment_master as tm', 'ledger.treatment_id', '=', 'tm.treatment_id')
+            ->leftJoin('users as u', 'ledger.therapist_id', '=', 'u.id')
+            ->select(
+                DB::raw("CONCAT(pm.patient_first_name, ' ', pm.patient_last_name) as patient_name"),
+                DB::raw("UPPER(tm.treatment_name) as treatment_name"),
+                'ledger.manually_consumed',
+                'ledger.created_at',
+                'u.name as therpist_name'
+            )
+            ->whereNotNull('ledger.manually_consumed')
+            ->where('ledger.manually_consumed', '>', 0)
+            ->when($request->clinic_id, fn ($q) => $q->where('pm.clinic_id', $request->clinic_id))
+            ->when($request->patient_id, fn ($q) => $q->where('ledger.patient_id', $request->patient_id))
+            ->orderByDesc('ledger.created_at')
+            ->get();
+
+        foreach ($manuals as $entry) {
+            $created = Carbon::parse($entry->created_at);
+            $scheduleList[] = [
+                "sr_no" => $srNo++,
+                "patient_schedule_id" => null,
+                "patient_session_id" => null,
+                "days" => $created->dayOfWeekIso,
+                "days_name" => date('l', strtotime($entry->created_at)),
+                "therapist_id" => null,
+                "therpist_name" => $entry->therpist_name ?? 'N/A',
+                "clinic_id" => null,
+                "start_time" => null,
+                "end_time" => null,
+                "treatment_id" => null,
+                "treatment_name" => $entry->treatment_name,
+                "total_amount" => 0,
+                "paid_amount" => 0,
+                "consume_amount" => 0,
+                "available_amount" => 0,
+                "remain_balance" => 0,
+                "due_amount" => 0,
+                "total_session" => 0,
+                "paid_session" => 0,
+                "due_session" => 0,
+                "consumed_session" => $entry->manually_consumed,
+                "available_session" => 0,
+                "session_consume_date" => date('d-F-Y', strtotime($entry->created_at)),
+                "session_status" => 'manually consumed',
+            ];
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Patient schedule & manually consumed history',
+            'Patient Schedule' => $scheduleList
+        ]);
+    } catch (ValidationException $e) {
+        return response()->json(['errors' => $e->errors()], 422);
+    } catch (\Throwable $th) {
+        return response()->json(['error' => $th->getMessage()], 500);
     }
+}
+
+
     public function history(Request $request)
     {
          try
@@ -2646,31 +2673,44 @@ public function refrenceBy_list(Request $request)
                     $dayNumber =  $request->day ?? date('N'); // 1 (Monday) to 7 (Sunday)
 
 
-                    $schedule=PatientSchedule::select('patient_schedule.*','patient_master.clinic_id','patientorderdetail.iAmount as total', 'patientorderdetail.iDueAmount as due','patientorderdetail.iPlanId','patientorderdetail.iSession','patientorderdetail.iOrderDetailId','patientorderdetail.iOrderId',DB::raw("(select name from users where users.id=patient_schedule.therapist_id limit 1) as therpist_name"),
-                    DB::raw("(select treatment_name from treatment_master where treatment_master.treatment_id=patient_schedule.treatment_id limit 1) as treatment_name")
-                    ,DB::raw("(SELECT CONCAT(patient_master.patient_first_name, ' ', patient_master.patient_last_name) 
-                  FROM patient_master 
-                  WHERE patient_master.patient_id = patient_schedule.patient_id LIMIT 1) AS patient_name")
-                    )->where(['patient_master.clinic_id'=>$request->clinic_id,'patient_schedule.day'=>$dayNumber,'cancel_package' => 0])
-                        ->when($request->therapist_id, fn($query, $therapist_id) => $query->where('patient_schedule.therapist_id', '=', $therapist_id))
-                        ->when($request->treatment_id, fn($query, $treatment_id) => $query->where('patient_schedule.treatment_id', '=', $treatment_id))
-                        ->when($request->search, function ($query, $Search) {
-                                    return $query->where(function ($query) use ($Search) {
-                                        $query->where('patient_first_name', 'LIKE', "%{$Search}%")
-                                              ->orWhere('patient_last_name', 'LIKE', "%{$Search}%")
-                                              ->orWhere('phone', 'LIKE', "%{$Search}%");
-                                    });
-                                })
-                        //->when($request->date, fn($query, $date) => $query->whereDate('patient_schedule.schedule_date', '=', $date)) // Filter by date
-                        ->join('patient_master', 'patient_master.patient_id', '=', 'patient_schedule.patient_id')
-                        ->join('patientordermaster', 'patientordermaster.iOrderId', '=', 'patient_schedule.orderId')
-                                ->join('patientorderdetail', function ($join) {
-                                    $join->on('patientorderdetail.iOrderId', '=', 'patientordermaster.iOrderId')
-                                         ->on('patientorderdetail.iTreatmentId', '=', 'patient_schedule.treatment_id');
-                                })
-                            ->groupBy('patientorderdetail.iOrderDetailId')
-                        ->orderBy('patient_schedule_id', 'desc')->get();
-
+                    $schedule = PatientSchedule::select(
+                                'patient_schedule.*',
+                                'patient_master.clinic_id',
+                                'patientorderdetail.iAmount as total',
+                                'patientorderdetail.iDueAmount as due',
+                                'patientorderdetail.iPlanId',
+                                'patientorderdetail.iSession',
+                                'patientorderdetail.iOrderDetailId',
+                                'patientorderdetail.iOrderId',
+                                DB::raw("(select name from users where users.id=patient_schedule.therapist_id limit 1) as therpist_name"),
+                                DB::raw("(select treatment_name from treatment_master where treatment_master.treatment_id=patient_schedule.treatment_id limit 1) as treatment_name"),
+                                DB::raw("(SELECT CONCAT(patient_master.patient_first_name, ' ', patient_master.patient_last_name)
+                                          FROM patient_master
+                                          WHERE patient_master.patient_id = patient_schedule.patient_id LIMIT 1) AS patient_name"),
+                                'patient_master.phone'
+                            )
+                            ->where([
+                                'patient_master.clinic_id' => $request->clinic_id,
+                                'patient_schedule.day' => $dayNumber,
+                                'cancel_package' => 0
+                            ])
+                            ->when($request->therapist_id, fn($q, $therapist_id) => $q->where('patient_schedule.therapist_id', $therapist_id))
+                            ->when($request->treatment_id, fn($q, $treatment_id) => $q->where('patient_schedule.treatment_id', $treatment_id))
+                            ->when($request->search, function ($q, $Search) {
+                                $q->where(function ($q2) use ($Search) {
+                                    $q2->where('patient_master.patient_first_name', 'LIKE', "%{$Search}%")
+                                       ->orWhere('patient_master.patient_last_name', 'LIKE', "%{$Search}%")
+                                       ->orWhere('patient_master.phone', 'LIKE', "%{$Search}%");
+                                });
+                            })
+                            ->join('patient_master', 'patient_master.patient_id', '=', 'patient_schedule.patient_id')
+                            ->join('patientordermaster', 'patientordermaster.iOrderId', '=', 'patient_schedule.orderId')
+                            ->join('patientorderdetail', function ($join) {
+                                $join->on('patientorderdetail.iOrderId', '=', 'patientordermaster.iOrderId')
+                                     ->on('patientorderdetail.iTreatmentId', '=', 'patient_schedule.treatment_id');
+                            })
+                            ->orderBy('patient_schedule.patient_schedule_id', 'desc')
+                            ->get();
                         if(sizeof($schedule) != 0)
                         {
                            
@@ -2686,7 +2726,7 @@ public function refrenceBy_list(Request $request)
                                
                                     $date = date('Y-m-d');
                                     $inPatient = PatientIn::where('patient_id', $val->patient_id)
-                                    ->where('treatment_id', $val->treatment_id)
+                                    ->where(['treatment_id'=> $val->treatment_id,'patient_schedule_id'=>$val->patient_schedule_id])
                                     ->whereDate('inDateTime', $date)->where(function ($query) 
                                     {
                                         $query->where('status', 0)
@@ -2758,6 +2798,7 @@ public function refrenceBy_list(Request $request)
                                         "days_name" => $daysOfWeek[$val->day] ?? 'Invalid Day',
                                         "patient_id" => $val->patient_id,
                                         "patient_name" => $val->patient_name,
+                                        "patient_mobile" => $val->phone,
                                         "therapist_id" => $val->therapist_id,
                                         "therpist_name" => $val->therpist_name,
                                         "clinic_id" => $val->clinic_id,

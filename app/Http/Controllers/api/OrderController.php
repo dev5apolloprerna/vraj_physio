@@ -10,7 +10,7 @@ use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-    
+	
 use App\Models\Billing;
 use App\Models\Plan;
 use App\Models\Patient;
@@ -30,9 +30,9 @@ use Carbon\Carbon;
 
 class OrderController extends Controller
 {
-    public function buy_treatment_package(Request $request)
-    {
-        try
+	public function buy_treatment_package(Request $request)
+	{
+		try
         {
             $request->validate([
                 'tempid' => 'required|array',
@@ -174,7 +174,7 @@ class OrderController extends Controller
                         'status' => 'error',
                         'message' => 'User is not Authorised.',
                 ], 401);
-            }
+        	}
         } catch (ValidationException $e) {
             return response()->json(['errors' => $e->errors()], 422);
         } catch (\Throwable $th) {

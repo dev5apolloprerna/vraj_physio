@@ -500,151 +500,126 @@ class PatientSessionController extends Controller
     }
 
     public function add_consumed_session(Request $request)
-    {
-        try 
-        {
-            if(auth()->guard('api')->user())
-            {
-                 $User = auth()->guard('api')->user();
-                 
-                    if($request->device_token != $User->device_token)
-                    {
-                        return response()->json([
-                            "ErrorCode" => "1",
-                            'Status' => 'Failed',
-                            'Message' => 'Device Token Not Match',
-                        ], 401);
-                    }
-                $suggested=PatientSuggestedTreatment::where('patient_id', $request->patient_id)->where('treatment_id', $request->treatment_id)->where('iOrderDetailId', $request->iOrderDetailId)->first();
-
-                       if ($suggested) 
-                       {
-                        $newUsedSession = max(0, $suggested->iUsedSession + $request->used_session);
-                        $newAvailableSession = $suggested->iSessionBuy - $newUsedSession;
-                        
-                        if ($newAvailableSession >= 0 && $request->used_session != 0) 
-                        {
-                            
-                            $suggested->iUsedSession = $newUsedSession;
-                            $suggested->iAvailableSession = $newAvailableSession;
-                            $suggested->manually_consumed = $request->used_session;
-                            $suggested->save();
-                        } 
-                        else
-                        {
-                            $suggested->iUsedSession = $request->used_session;
-                            $suggested->iAvailableSession = $suggested->iSessionBuy - $request->used_session;
-                            $suggested->manually_consumed = $request->used_session;
-                            $suggested->save();                           
-                        }
-                    } else 
-                    {
-                        $suggested = new PatientSuggestedTreatment();
-                        $suggested->patient_id = $request->patient_id;
-                        $suggested->treatment_id = $request->treatment_id;
-                    
-                        $suggested->iUsedSession = max(0, $request->used_session);
-                        $suggested->iAvailableSession = max(0, $request->iSessionBuy - $suggested->iUsedSession);
-                        $suggested->iSessionBuy = $request->iSessionBuy; // Add this if session buy is in the request
-                        $suggested->manually_consumed = $request->used_session;
-                        $suggested->save();
-                    }
-                    
-                    if($suggested->iAvailableSession == 0)
-                       {
-                       		    $suggested->isActive=0; 
-						   		$suggested->save();
-                       }
-
-    
-                    $session = PatientSchedule::where(['patient_schedule_id'=>$request->patient_schedule_id,'status'=>0])->first();
-
-                    $ledger = PatientTreatmentLedger::where(['patient_id'=>$request->patient_id,'treatment_id'=>$request->treatment_id,'iOrderDetailId'=>$request->iOrderDetailId])->first();
-                    
-                    if ($ledger == null) 
-                    {
-                        $ledger = new PatientTreatmentLedger();
-                        $ledger->patient_id = $request->patient_id;
-                        $ledger->treatment_id = $request->treatment_id;
-                        $ledger->therapist_id = $request->therapist_id;
-                        $ledger->iOrderDetailId = $request->iOrderDetailId;
-                        $ledger->iSessionTakenId = $request->patient_schedule_id;
-                        $ledger->opening_balance = $suggested->iSessionBuy; // Total sessions bought
-                    
-                        $usedSession = max(-$ledger->opening_balance, $request->used_session);
-                    
-                        if ($usedSession == 0) {
-                            $ledger->credit_balance = 0.0; // No sessions used
-                            $ledger->debit_balance = 0.0; // No sessions added back
-                            $ledger->closing_balance = $ledger->opening_balance; // No change
-                        } elseif ($usedSession > 0) {
-                            $ledger->credit_balance = $usedSession; // Sessions used
-                            $ledger->debit_balance = 0.0; // No sessions added back
-                        } else {
-                            $ledger->credit_balance = 0.0; // No sessions used
-                            $ledger->debit_balance = abs($usedSession); // Add back sessions
-                        }
-                    
-                        // Calculate closing balance
-                        $ledger->closing_balance = $ledger->opening_balance - $ledger->credit_balance + $ledger->debit_balance;
-                    
-                        // Ensure closing balance is not negative
-                        if ($ledger->closing_balance < 0) {
-                            return response()->json(['error' => 'Invalid session adjustment.'], 400);
-                        }
-                    
-                        $ledger->save();
-                    } else 
-                    {
-                        // Update ledger when a previous entry exists
-                        $newLedger = new PatientTreatmentLedger();
-                        $newLedger->patient_id = $session->patient_id;
-                        $newLedger->treatment_id = $session->treatment_id;
-                        $newLedger->therapist_id = $session->therapist_id;
-                        $newLedger->iOrderDetailId = $ledger->iOrderDetailId;
-                        $newLedger->iSessionTakenId = $session->iSessionTakenId;
-                        $newLedger->opening_balance = $ledger->closing_balance ?? $suggested->iSessionBuy;
-                        $usedSession = max(-$newLedger->opening_balance, $request->used_session);
-                    
-                        if ($usedSession == 0) {
-                            $newLedger->credit_balance = 0.0; // No sessions used
-                            $newLedger->debit_balance = 0.0; // No sessions added back
-                        } elseif ($usedSession > 0) {
-                            $newLedger->credit_balance = $usedSession; // Sessions used
-                            $newLedger->debit_balance = 0.0; // No sessions added back
-                        } else {
-                            $newLedger->credit_balance = 0.0; // No sessions used
-                            $newLedger->debit_balance = abs($usedSession); // Add back sessions
-                        }
-                    
-                        // Calculate closing balance
-                        $newLedger->closing_balance = $newLedger->opening_balance - $newLedger->credit_balance + $newLedger->debit_balance;
-                    
-                        // Ensure closing balance is not negative
-                        if ($newLedger->closing_balance < 0) {
-                            return response()->json(['error' => 'Invalid session adjustment.'], 400);
-                        }
-                    
-                        $newLedger->save();
-                    }
-       
-                   return response()->json([
-                        'status' => 'success',
-                        'message' => 'Patient Session Consumed Successfully',
-                    ]);
-            }else
-            {
-                return response()->json([
-                        'status' => 'error',
-                        'message' => 'User is not Authorised.',
-                ], 401);
-            }
-        } catch (ValidationException $e) {
-            return response()->json(['errors' => $e->errors()], 422);
-        } catch (\Throwable $th) {
-            return response()->json(['error' => $th->getMessage()], 500);
-        }
+{
+    if (!auth()->guard('api')->user()) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'User is not Authorised.',
+        ], 401);
     }
+
+    $User = auth()->guard('api')->user();
+
+    if ($request->device_token != $User->device_token) {
+        return response()->json([
+            "ErrorCode" => "1",
+            'Status' => 'Failed',
+            'Message' => 'Device Token Not Match',
+        ], 401);
+    }
+
+    DB::beginTransaction();
+    try {
+
+        /* -------------------------------------------------
+         | STEP 1: Update PatientSuggestedTreatment
+         ------------------------------------------------- */
+        $suggested = PatientSuggestedTreatment::where([
+            'patient_id' => $request->patient_id,
+            'treatment_id' => $request->treatment_id,
+            'iOrderDetailId' => $request->iOrderDetailId
+        ])->first();
+
+        if (!$suggested) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Suggested treatment not found'
+            ], 404);
+        }
+
+        $usedSession = (int) $request->used_session;
+
+        // Calculate new values
+        $newUsed = $suggested->iUsedSession + $usedSession;
+        $newAvailable = $suggested->iSessionBuy - $newUsed;
+        
+
+        if ($newAvailable < 0) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Not enough available sessions'
+            ], 400);
+        }
+
+        $suggested->iUsedSession = $newUsed;
+        $suggested->iAvailableSession = $newAvailable;
+        $suggested->manually_consumed += $usedSession;
+
+        if ($newAvailable == 0) {
+            $suggested->isActive = 0;
+        }
+
+        $suggested->save();
+
+        /* -------------------------------------------------
+         | STEP 2: Ledger Entry (FIXED LOGIC)
+         ------------------------------------------------- */
+
+        // Get last ledger entry
+        $lastLedger = PatientTreatmentLedger::where([
+            'patient_id' => $request->patient_id,
+            'treatment_id' => $request->treatment_id,
+            'iOrderDetailId' => $request->iOrderDetailId
+        ])->orderBy('iLedgerId', 'desc')->first();
+
+        // Opening balance
+        $openingBalance = $lastLedger
+            ? $lastLedger->closing_balance
+            : $suggested->iSessionBuy;
+
+        // Closing balance
+        $closingBalance = $openingBalance - $usedSession;
+
+        if ($closingBalance < 0) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Ledger balance cannot be negative'
+            ], 400);
+        }
+
+        // Insert NEW ledger entry (never update old)
+        $ledger = new PatientTreatmentLedger();
+        $ledger->patient_id      = $request->patient_id;
+        $ledger->treatment_id    = $request->treatment_id;
+        $ledger->therapist_id    = $request->therapist_id;
+        $ledger->iOrderDetailId  = $request->iOrderDetailId;
+        $ledger->iSessionTakenId = $request->patient_schedule_id;
+
+        $ledger->opening_balance = $openingBalance;
+        $ledger->credit_balance  = $usedSession; // ONLY delta
+        $ledger->debit_balance   = 0;
+        $ledger->closing_balance = $closingBalance;
+        $ledger->manually_consumed = 1;
+        
+
+        $ledger->save();
+
+        DB::commit();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Patient Session Consumed Successfully',
+        ]);
+
+    } catch (\Throwable $th) {
+        DB::rollBack();
+        return response()->json([
+            'status' => 'error',
+            'message' => $th->getMessage()
+        ], 500);
+    }
+}
+
 
 }
 ?>

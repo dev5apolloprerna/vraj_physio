@@ -13,8 +13,8 @@ use App\Models\PatientSchedule;
 use App\Models\SessionMaster;
 use App\Models\Patient;
 use App\Models\PatientIn;
-use App\Models\CashLedger;
 use App\Models\OrderPayment;
+use App\Models\CashLedger;
 use App\Models\User;
 use Illuminate\Support\Facades\Storage;
 
@@ -137,14 +137,13 @@ class DashboardController extends Controller
             return response()->json(['error' => $th->getMessage()], 500);
         }
 	}
-        public function deshboardcashonhand(Request $request)
+	
+	public function cashonhand(Request $request)
         {
-            try
-        {
+            
             if(auth()->guard('api')->user())
             {
                 $User = auth()->guard('api')->user();
-
                 if($request->device_token != $User->device_token)
                 {
                     return response()->json([
@@ -174,11 +173,6 @@ class DashboardController extends Controller
                             'message' => 'User is not Authorised.',
                     ], 401);
               }
-            } catch (ValidationException $e) {
-                return response()->json(['errors' => $e->errors()], 422);
-            } catch (\Throwable $th) {
-                return response()->json(['error' => $th->getMessage()], 500);
-            }
         }
 	
 }
