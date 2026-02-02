@@ -35,5 +35,10 @@ class SignaturePadController extends Controller
         file_put_contents($file, $image_base64);
         return back()->with('success', 'success Full upload signature');
     }
+    
+    public function privacy_policy()
+    {
+        return view('privacy_policy');
+    }
 }
 

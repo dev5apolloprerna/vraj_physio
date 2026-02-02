@@ -131,4 +131,6 @@ class HomeController extends Controller
             return back()->with('error', 'Current Password does not match');
         }
     }
+    
+    
 }

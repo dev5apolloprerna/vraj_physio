@@ -1,6 +1,6 @@
 <?php 
 use Illuminate\Support\Facades\Route;
- use App\Http\Controllers\SignaturePadController;
+use App\Http\Controllers\SignaturePadController;
 
 Route::get('/greeting', function () {
     return 'Hello World';
@@ -15,6 +15,7 @@ Route::get('/clear-cache', function () {
 	//Artisan::call('storage:link');
 	return 'Cache is cleared';
 });
+Route::get('privacy-policy', [SignaturePadController::class, 'privacy_policy']);
 
 Route::get('signaturepad', [SignaturePadController::class, 'index']);
 Route::post('signaturepad', [SignaturePadController::class, 'upload'])->name('signaturepad.upload');
