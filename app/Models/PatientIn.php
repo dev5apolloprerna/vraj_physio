@@ -9,7 +9,7 @@ class PatientIn extends Model
 {
     use HasFactory;
     public $table = 'patientin';
-    protected $primaryKey = 'patientin'; // Define the primary key
+    protected $primaryKey = 'iPatientInId'; // Define the primary key
 
     public $timestamps = false; // Disable timestamps
 

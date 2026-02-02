@@ -78,8 +78,6 @@ Route::post('/today_new_patient', [ListingController::class, 'today_new_patient'
 Route::post('/today_collection', [ListingController::class, 'today_collection'])->name('today_collection');
 Route::post('/today_appointment_treatment', [ListingController::class, 'today_appointment_treatment'])->name('today_appointment_treatment');
 
-
-
 /*---------------------------- ALL Listing END----------------------------------***/
 
 /*---------------------------- ALL CRUD START----------------------------------***/
@@ -149,6 +147,7 @@ Route::post('/delete_treatment', [CRUDController::class, 'delete_treatment'])->n
 Route::post('/patient_in_store', [CRUDController::class, 'patient_in_store'])->name('patient_in_store');
 Route::post('/edit_my_treatment_list', [CRUDController::class, 'edit_my_treatment_list'])->name('edit_my_treatment_list');
 Route::post('/renew_package', [CRUDController::class, 'renew_package'])->name('renew_package');
+Route::post('/cancel_patient_session', [CRUDController::class, 'cancel_patient_session'])->name('cancel_patient_session');
 
 /*----------------------------Ptient session crud----------------------------------***/
 
@@ -193,31 +192,28 @@ Route::post('/upcoming_renewal_report', [ReportController::class, 'upcoming_rene
 
 //-----------------------------Dashboard -------------------------------//
 Route::post('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
-Route::post('/deshboardcashonhand', [DashboardController::class, 'deshboardcashonhand'])->name('deshboardcashonhand');
+Route::post('/cashonhand', [DashboardController::class, 'cashonhand'])->name('cashonhand');
 
 
-
-
-/// cash reports
 
 
 Route::post('cash-expenses', 'App\Http\Controllers\api\CashExpenseController@index');
 Route::post('cash-expenses/store', 'App\Http\Controllers\api\CashExpenseController@store');
-// Route::post('cash-expenses/show', 'App\Http\Controllers\api\CashExpenseController@show');
+// Route::post('cash-expenses/show', 'App\Http\Controllers\Api\CashExpenseController@show');
 Route::post('cash-expenses/update', 'App\Http\Controllers\api\CashExpenseController@update');
 Route::post('cash-expenses/destroy', 'App\Http\Controllers\api\CashExpenseController@destroy');
 
-Route::post('cash-expenses/voucher', 'App\Http\Controllers\api\CashExpenseController@CashExpensesVoucher');
+Route::post('cash-expenses/voucher', 'App\Http\Controllers\Api\CashExpenseController@CashExpensesVoucher');
 
 Route::post('cash-collection', 'App\Http\Controllers\api\CashCollectionController@index');
 Route::post('cash-collection/store', 'App\Http\Controllers\api\CashCollectionController@store');
-// Route::post('cash-expenses/show', 'App\Http\Controllers\api\CashCollectionController@show');
+// Route::post('cash-expenses/show', 'App\Http\Controllers\Api\CashCollectionController@show');
 Route::post('cash-collection/update', 'App\Http\Controllers\api\CashCollectionController@update');
 Route::post('cash-collection/destroy', 'App\Http\Controllers\api\CashCollectionController@destroy');
 
 Route::post('reset-opening', 'App\Http\Controllers\api\CashCollectionController@resetOpening');
 
-// Route::post('cash_collection_report', 'App\Http\Controllers\api\CashCollectionController@CashCollectionReport');
+// Route::post('cash_collection_report', 'App\Http\Controllers\Api\CashCollectionController@CashCollectionReport');
 Route::post('cash_ledger', 'App\Http\Controllers\api\CashCollectionController@CashLedger');
 
 Route::post('cash_list', 'App\Http\Controllers\api\CashCollectionController@CashList');

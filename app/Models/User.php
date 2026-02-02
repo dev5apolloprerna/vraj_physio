@@ -77,7 +77,7 @@ class User extends Authenticatable implements JWTSubject
             //$data = "http://api.bulkcampaigns.com/api/wapi?json=true&apikey=".$key."&mobile=".$mobile."&msg=".urlencode($msg);
             //$data = "https://newweb.technomantraa.com/api/send?number=".$mobile."&type=text&message=".urlencode($msg)."&instance_id=65B0AA55DBFC6&access_token=65ae0fdc57bce";
             //$data = "https://newweb.technomantraa.com/api/send?number=91".$mobile."&type=text&message=".urlencode($msg)."&instance_id=65C48823AC1D6&access_token=65c486860588c";
-            $data = "https://newweb.technomantraa.com/api/send?number=91".$mobile."&type=text&message=".urlencode($msg)."&instance_id=666946D557590&access_token=65c486860588c";
+            $data = "https://newweb.technomantraa.com/api/send?number=91".$mobile."&type=text&message=".urlencode($msg)."&instance_id=690EDD8CCD25E&access_token=65c486860588c";
        }
       
         $ret = file_get_contents($data);
