@@ -1126,8 +1126,8 @@ class ReportController extends Controller
                 DB::raw("CONCAT(patient_master.patient_first_name, ' ', patient_master.patient_last_name) as patient_name"),
                 DB::raw("UPPER(treatment_master.treatment_name) as treatment_name"),
                 DB::raw("COUNT(*) as session_count")
-            )
-            ->where('sessionmaster.session_status', 2);
+            );
+            // ->where('sessionmaster.session_status', 2);
 
         if ($month && $year) {
             $query->whereYear('sessionmaster.created_at', $year)
@@ -1150,7 +1150,7 @@ class ReportController extends Controller
                 DB::raw("UPPER(tm.treatment_name) as treatment_name"),
                 DB::raw("SUM(pst.manually_consumed) as session_count")
             )
-            ->where('pst.isActive', 1)
+            //->where('pst.isActive', 1)
             ->groupBy('pst.patient_id', 'patient_name', 'treatment_name')
             ->get();
 
