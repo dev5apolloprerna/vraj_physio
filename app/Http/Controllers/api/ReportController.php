@@ -1344,7 +1344,7 @@ class ReportController extends Controller
             $dueAmount   = (float)($row->due_amount ?? 0);
             $totalPaid   = $totalAmount - $dueAmount;
             
-            // ✅ paid sessions (integer)
+            /*// ✅ paid sessions (integer)
             $paidSession = ($perSession > 0) ? ($totalPaid / $perSession) : 0;
             $paidSessionInt = (int) round($paidSession, 0);
             
@@ -1361,10 +1361,33 @@ class ReportController extends Controller
             // ✅ only show <= 2 (includes negative values)
             if ($availableInt > 2) {
                 continue;
-            }
+            }*/
+            
+            $paidSession = ($perSession > 0) ? ($totalPaid / $perSession) : 0;
+            $paidSessionInt = (int) round($paidSession, 0);
+            
+            $usedSession = (int) ($session->iUsedSession ?? 0);
+            
+            // ✅ available sessions (integer, can be negative)
+            $availableInt = (int) round($paidSession - $usedSession, 0);
+            
+            // $totalBuy = (int)($row->total_session_buy ?? 0);
             
             $totalBuy = (int)($row->total_session_buy ?? 0);
+            $usedSession = (int) ($session->iUsedSession ?? 0);
             
+            // ✅ remaining sessions based on TOTAL bought sessions (not paid)
+            $availableInt = $totalBuy - $usedSession;
+            
+            // ✅ don't allow minus or 0 (completed/invalid)
+            if ($availableInt <= 0) {
+                continue;
+            }
+            
+            // ✅ only show remaining <= 2
+            if ($availableInt > 2) {
+                continue;
+            }
             // ✅ due sessions (integer)
             $dueSessionInt = (int) round($totalBuy - $paidSession, 0);
             
