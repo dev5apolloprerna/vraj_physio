@@ -93,10 +93,10 @@ class CRUDController extends Controller
                     $patient->ref_by=$request->ref_by;
                     $patient->save();
                         
-                        $key = $_ENV['WHATSAPPKEY'];
+                        /*$key = $_ENV['WHATSAPPKEY'];
                     	$users = new User();
                     	$msg = "Welcome to Vraj PHYSIOTHERAPY AND CHILD DEVELOPMENT CENTER! We’re excited to have you with us and look forward to supporting your child's growth and development. Our dedicated team is here to help every step of the way!";
-						$status = $users->sendWhatsappMessage($request->mobile,$key,$msg, $someOtherParam = null);
+						$status = $users->sendWhatsappMessage($request->mobile,$key,$msg, $someOtherParam = null);*/
 
                     return response()->json([
                         'status' => 'success',
