@@ -30,149 +30,200 @@ use App\Exports\DailyCollection;
 use App\Exports\GroupSessionExport;
 use App\Exports\PatientVisit;
 
+use App\Models\PatientTreatmentLedger;
 class ReportController extends Controller
 {
 
- public function patient_attended_session(Request $request)
-    {
-        try 
-        {
-            if(auth()->guard('api')->user())
-            {
-                 $User = auth()->guard('api')->user();
-                 
-                    if($request->device_token != $User->device_token)
-                    {
-                        return response()->json([
-                            "ErrorCode" => "1",
-                            'Status' => 'Failed',
-                            'Message' => 'Device Token Not Match',
-                        ], 401);
-                    }
-                $attendedSession =SessionMaster::select([
-                                        'sessionmaster.created_at','pst.iUsedSession','sessionmaster.iSessionTakenId',
-                                        DB::raw('(SELECT treatment_name FROM treatment_master WHERE treatment_master.treatment_id = sessionmaster.treatment_id LIMIT 1) AS treatment_name'),
-                                        DB::raw('(SELECT name FROM users WHERE users.id = sessionmaster.therapist_id LIMIT 1) AS therapist_name'),
-                                        DB::raw('(SELECT invoice_no FROM orderpayment WHERE orderpayment.orderDetailId = pst.iOrderDetailId  LIMIT 1) AS invoice_no'),
-                                        DB::raw('(SELECT CONCAT(patient_master.patient_first_name, " ", patient_master.patient_last_name) FROM patient_master WHERE patient_master.patient_id = sessionmaster.patient_id LIMIT 1) AS patient_name'),
-                                        DB::raw('(SELECT per_session_amount FROM plan_master WHERE plan_master.plan_id = pod.iPlanId LIMIT 1) AS per_session_amount'),
-                                        DB::raw('(SELECT clinic_id FROM plan_master WHERE plan_master.treatment_id = sessionmaster.treatment_id LIMIT 1) AS clinic_id'),
-                                        DB::raw('(SELECT isGroupSession FROM patientin WHERE patientin.iPatientInId  = sessionmaster.iPatientInId LIMIT 1) AS isGroupSession')
-                                    ])
-                                    ->where('sessionmaster.session_status', 2)
-                                    ->when($request->fromdate, function ($query) use ($request) {
-                                        return $query->where('sessionmaster.created_at', '>=', date('Y-m-d 00:00:00', strtotime($request->fromdate)));
-                                    })
-                                    ->when($request->todate, function ($query) use ($request) {
-                                        return $query->where('sessionmaster.created_at', '<=', date('Y-m-d 23:59:59', strtotime($request->todate)));
-                                    })
-                                    ->when($request->month, function ($query) use ($request) {
-                                        return $query->whereMonth('sessionmaster.created_at', $request->month);
-                                    })
-                                    ->when($request->year, function ($query) use ($request) {
-                                        return $query->whereYear('sessionmaster.created_at', $request->year);
-                                    })
-                                    ->join('patient_schedule AS ps', 'ps.patient_schedule_id', '=', 'sessionmaster.scheduleid')
-                                    ->join('patient_suggested_treatment AS pst', 'pst.iOrderId', '=', 'ps.orderId')
-                                    ->join('patientorderdetail AS pod', 'pod.iOrderId', '=', 'ps.orderId')
-                                    ->orderBy('sessionmaster.iSessionTakenId','asc')
-                                    ->get();
-
-                
-                         
-                         $sessionList=[];
-                         $sessionList2=[];
-                        $session=0;
-                        $amount=0;
-                        $total=0;
-
-                    foreach ($attendedSession as $key => $val) 
-                    {
-                            $session = $val->iUsedSession;
-                            $amount = $val->per_session_amount;
-                            $total = $amount * $session;
-                            
-                             if($val->isGroupSession == 1)
-                            {
-                                $groupsession="yes";
-                            }
-                            else{
-                                $groupsession="no";
-                            }
-                            
-                            $sessionList[] = array
-                            (               
-                                     "invoice_no"=>$val->invoice_no ?? '-',
-                                    "date"=>$val->created_at,
-                                    "patient_name" => $val->patient_name,
-                                    "therapist_name" => $val->therapist_name ?? '-',
-                                    "treatment_name" => $val->treatment_name,
-                                    "total_session"=>$val->iUsedSession,
-                                    "total_session_amount"=>$val->per_session_amount,
-                                    "group_session"=>$groupsession,
-                                    "total_amount"=>$total
-
-                                );
-                                $sessionList2[] = array
-                                (               
-                                     "invoice_no"=>$val->invoice_no ?? '-',
-                                    "date"=>$val->created_at,
-                                    "patient_name" => $val->patient_name,
-                                    "therapist_name" => $val->therapist_name ?? '-',
-                                    "treatment_name" => $val->treatment_name,
-                                    "group_session"=>$groupsession,
-                                    "total_session_amount"=>$val->per_session_amount,
-
-                                );
-                    }
-                    if($request->status == 1)
-                    {
-                        
-                    
-                      $export = new SessionExport($sessionList2, $request->fromdate, $request->todate, $request->month, $request->year);
-
-                    // Define the target directory and ensure it exists
-                    $basePath = '/home3/vrajdahj/vrajphysioapp.vrajdentalclinic.com/reports';
-                    if (!file_exists($basePath)) {
-                        mkdir($basePath, 0755, true); // Create the directory with appropriate permissions
-                    }
-                    
-                    // Define the file path
-                    $fileName = 'Patient_attended_session_report_' . now()->format('Y_m_d_H_i_s') . '.xlsx';
-                    $filePath = $basePath . '/' . $fileName;
-                    
-                    // Store the Excel file
-                    Excel::store($export, 'export/' . $fileName, 'public'); // Adjust path relative to 'public' disk
-                    
-                    // Generate the public file URL
-                    $fileUrl = asset('reports/export/' . $fileName);
-                    
-                    return response()->json([
-                        'status' => 'success',
-                        'file_url' => $fileUrl
-                        ]);
-                        
-                    }
-
-                    return response()->json([
-                        'status' => 'success',
-                        'message' => 'Attended Session List',
-                        'Attended Session List' => $sessionList,
-                    ]);
-
-
-        }else{
-                return response()->json([
-                        'status' => 'error',
-                        'message' => 'User is not Authorised.',
-                ], 401);
-            }
-        } catch (ValidationException $e) {
-            return response()->json(['errors' => $e->errors()], 422);
-        } catch (\Throwable $th) {
-            return response()->json(['error' => $th->getMessage()], 500);
+public function patient_attended_session(Request $request)
+{
+    try {
+        if (!auth()->guard('api')->user()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'User is not Authorised.',
+            ], 401);
         }
+
+        $user = auth()->guard('api')->user();
+
+        if ($request->device_token != $user->device_token) {
+            return response()->json([
+                "ErrorCode" => "1",
+                'Status' => 'Failed',
+                'Message' => 'Device Token Not Match',
+            ], 401);
+        }
+
+        $attendedSession = SessionMaster::from('sessionmaster as sm')
+            ->select([
+                'sm.created_at',
+                'sm.iSessionTakenId',
+                'pst.iOrderDetailId',
+                'pst.iUsedSession',
+                DB::raw("'regular' as entry_type"),
+                'tm.treatment_name',
+                'u.name as therapist_name',
+                'op.invoice_no',
+                DB::raw('CONCAT(pm.patient_first_name, " ", pm.patient_last_name) as patient_name'),
+                'plan_master.per_session_amount',
+                'pi.isGroupSession',
+            ])
+            ->join('patient_schedule as ps', function ($join) {
+                $join->on('ps.patient_schedule_id', '=', 'sm.scheduleid')
+                    ->on('ps.patient_id', '=', 'sm.patient_id')
+                    ->on('ps.treatment_id', '=', 'sm.treatment_id');
+            })
+            ->join('patient_suggested_treatment as pst', function ($join) {
+                $join->on('pst.iOrderId', '=', 'ps.orderId')
+                    ->on('pst.patient_id', '=', 'sm.patient_id')
+                    ->on('pst.treatment_id', '=', 'sm.treatment_id');
+            })
+            ->join('patientorderdetail as pod', 'pod.iOrderDetailId', '=', 'pst.iOrderDetailId')
+            ->leftJoin('plan_master', 'plan_master.plan_id', '=', 'pod.iPlanId')
+            ->leftJoin('treatment_master as tm', 'tm.treatment_id', '=', 'sm.treatment_id')
+            ->leftJoin('users as u', 'u.id', '=', 'sm.therapist_id')
+            ->leftJoin('patient_master as pm', 'pm.patient_id', '=', 'sm.patient_id')
+            ->leftJoin('orderpayment as op', 'op.orderDetailId', '=', 'pst.iOrderDetailId')
+            ->leftJoin('patientin as pi', 'pi.iPatientInId', '=', 'sm.iPatientInId')
+            ->where('sm.session_status', 2)
+            ->when($request->fromdate, function ($query) use ($request) {
+                return $query->where('sm.created_at', '>=', date('Y-m-d 00:00:00', strtotime($request->fromdate)));
+            })
+            ->when($request->todate, function ($query) use ($request) {
+                return $query->where('sm.created_at', '<=', date('Y-m-d 23:59:59', strtotime($request->todate)));
+            })
+            ->when($request->month, function ($query) use ($request) {
+                return $query->whereMonth('sm.created_at', $request->month);
+            })
+            ->when($request->year, function ($query) use ($request) {
+                return $query->whereYear('sm.created_at', $request->year);
+            })
+            ->orderBy('sm.created_at', 'asc')
+            ->orderBy('sm.iSessionTakenId', 'asc')
+            ->get();
+
+        $manualSessions = DB::table('patienttreatementledger as ptl')
+            ->select([
+                'ptl.created_at',
+                'ptl.iSessionTakenId',
+                'ptl.iLedgerId',
+                'ptl.iOrderDetailId',
+                'ptl.manually_consumed',
+                DB::raw("'manual' as entry_type"),
+                'tm.treatment_name',
+                'u.name as therapist_name',
+                'op.invoice_no',
+                DB::raw('CONCAT(pm.patient_first_name, " ", pm.patient_last_name) as patient_name'),
+                'plan_master.per_session_amount',
+                DB::raw('0 as isGroupSession'),
+            ])
+            ->leftJoin('patientorderdetail as pod', 'pod.iOrderDetailId', '=', 'ptl.iOrderDetailId')
+            ->leftJoin('plan_master', 'plan_master.plan_id', '=', 'pod.iPlanId')
+            ->leftJoin('treatment_master as tm', 'tm.treatment_id', '=', 'ptl.treatment_id')
+            ->leftJoin('users as u', 'u.id', '=', 'ptl.therapist_id')
+            ->leftJoin('patient_master as pm', 'pm.patient_id', '=', 'ptl.patient_id')
+            ->leftJoin('orderpayment as op', 'op.orderDetailId', '=', 'ptl.iOrderDetailId')
+            ->whereNotNull('ptl.manually_consumed')
+            ->where('ptl.manually_consumed', '>', 0)
+            ->when($request->fromdate, function ($query) use ($request) {
+                return $query->where('ptl.created_at', '>=', date('Y-m-d 00:00:00', strtotime($request->fromdate)));
+            })
+            ->when($request->todate, function ($query) use ($request) {
+                return $query->where('ptl.created_at', '<=', date('Y-m-d 23:59:59', strtotime($request->todate)));
+            })
+            ->when($request->month, function ($query) use ($request) {
+                return $query->whereMonth('ptl.created_at', $request->month);
+            })
+            ->when($request->year, function ($query) use ($request) {
+                return $query->whereYear('ptl.created_at', $request->year);
+            })
+            ->orderBy('ptl.created_at', 'asc')
+            ->orderBy('ptl.iLedgerId', 'asc')
+            ->get();
+
+        $sessionList = [];
+        $sessionList2 = [];
+
+        $allRows = $attendedSession->concat($manualSessions)->sortBy(function ($row) {
+            return sprintf(
+                '%s-%010d-%010d',
+                $row->created_at,
+                (int) ($row->iSessionTakenId ?? 0),
+                (int) ($row->iLedgerId ?? 0)
+            );
+        })->values();
+
+        foreach ($allRows as $row) {
+            if (($row->entry_type ?? '') === 'manual') {
+                $consumedSession = (float) ($row->manually_consumed ?? 0);
+            } else {
+                $consumedSession = (float) ($row->iUsedSession ?? 0);
+            }
+
+            $amount = (float) ($row->per_session_amount ?? 0);
+            $total = $amount * $consumedSession;
+            $groupSession = ((int) ($row->isGroupSession ?? 0) === 1) ? 'yes' : 'no';
+
+            $sessionList[] = [
+                "invoice_no" => $row->invoice_no ?? '-',
+                "date" => $row->created_at,
+                "patient_name" => $row->patient_name ?? '-',
+                "therapist_name" => $row->therapist_name ?? '-',
+                "treatment_name" => $row->treatment_name ?? '-',
+                "consumed_session" => $consumedSession,
+                "total_session_amount" => $amount,
+                "group_session" => $groupSession,
+                "session_taken_id" => $row->iSessionTakenId ?? null,
+                "ledger_id" => $row->iLedgerId ?? null,
+                "total_amount" => $total,
+            ];
+
+            $sessionList2[] = [
+                "invoice_no" => $row->invoice_no ?? '-',
+                "date" => $row->created_at,
+                "patient_name" => $row->patient_name ?? '-',
+                "therapist_name" => $row->therapist_name ?? '-',
+                "treatment_name" => $row->treatment_name ?? '-',
+                "consumed_session" => $consumedSession,
+                "group_session" => $groupSession,
+                "total_session_amount" => $amount,
+            ];
+        }
+
+        if ($request->status == 1) {
+            $export = new SessionExport(
+                $sessionList2,
+                $request->fromdate,
+                $request->todate,
+                $request->month,
+                $request->year
+            );
+
+            $basePath = '/home3/vrajdahj/vrajphysioapp.vrajdentalclinic.com/reports';
+            if (!file_exists($basePath)) {
+                mkdir($basePath, 0755, true);
+            }
+
+            $fileName = 'Patient_attended_session_report_' . now()->format('Y_m_d_H_i_s') . '.xlsx';
+            Excel::store($export, 'export/' . $fileName, 'public');
+
+            return response()->json([
+                'status' => 'success',
+                'file_url' => asset('reports/export/' . $fileName)
+            ]);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Attended Session List',
+            'Attended Session List' => $sessionList,
+        ]);
+    } catch (ValidationException $e) {
+        return response()->json(['errors' => $e->errors()], 422);
+    } catch (\Throwable $th) {
+        return response()->json(['error' => $th->getMessage()], 500);
     }
+}
     public function total_session_report(Request $request)
     {
         try 
@@ -1106,8 +1157,9 @@ class ReportController extends Controller
 
         $month     = $request->input('month');
         $year      = $request->input('year');
-        $fromDate  = $request->input('from_date');
-        $toDate    = $request->input('to_date');
+        $fromDate  = $request->input('from_date', $request->input('fromdate'));
+        $toDate    = $request->input('to_date', $request->input('todate'));
+        $hasDateFilter = ($month && $year) || ($fromDate && $toDate);
 
         // STEP 1: Get all treatment names (in uppercase) with default 0
         $defaultTreatments = DB::table('treatment_master')
@@ -1126,9 +1178,8 @@ class ReportController extends Controller
                 DB::raw("CONCAT(patient_master.patient_first_name, ' ', patient_master.patient_last_name) as patient_name"),
                 DB::raw("UPPER(treatment_master.treatment_name) as treatment_name"),
                 DB::raw("COUNT(*) as session_count")
-            );
-            // ->where('sessionmaster.session_status', 2);
-
+            )
+            ->where('sessionmaster.session_status', 2);
         if ($month && $year) {
             $query->whereYear('sessionmaster.created_at', $year)
                   ->whereMonth('sessionmaster.created_at', $month);
@@ -1142,18 +1193,20 @@ class ReportController extends Controller
         $results = $query->get();
 
         // STEP 3: Manual consumed sessions
-        $manuals = DB::table('patient_suggested_treatment as pst')
-            ->join('patient_master as pm', 'pst.patient_id', '=', 'pm.patient_id')
-            ->join('treatment_master as tm', 'pst.treatment_id', '=', 'tm.treatment_id')
-            ->select(
-                DB::raw("CONCAT(pm.patient_first_name, ' ', pm.patient_last_name) as patient_name"),
-                DB::raw("UPPER(tm.treatment_name) as treatment_name"),
-                DB::raw("SUM(pst.manually_consumed) as session_count")
-            )
-            //->where('pst.isActive', 1)
-            ->groupBy('pst.patient_id', 'patient_name', 'treatment_name')
-            ->get();
-
+         $manuals = collect();
+        if (!$hasDateFilter) {
+            $manuals = DB::table('patient_suggested_treatment as pst')
+                ->join('patient_master as pm', 'pst.patient_id', '=', 'pm.patient_id')
+                ->join('treatment_master as tm', 'pst.treatment_id', '=', 'tm.treatment_id')
+                ->select(
+                    DB::raw("CONCAT(pm.patient_first_name, ' ', pm.patient_last_name) as patient_name"),
+                    DB::raw("UPPER(tm.treatment_name) as treatment_name"),
+                    DB::raw("SUM(pst.manually_consumed) as session_count")
+                )
+                //->where('pst.isActive', 1)
+                ->groupBy('pst.patient_id', 'patient_name', 'treatment_name')
+                ->get();
+        }
         // STEP 4: Merge results
         $merged = collect($results)->merge($manuals);
         $finalData = [];

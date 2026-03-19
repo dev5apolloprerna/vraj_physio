@@ -39,18 +39,19 @@ class SessionExport implements FromCollection, WithHeadings
             'Patient Name',
             'Therapist Name',
             'Treatment Name',
+            'Consumed Session',
             'Group Session',
             'Per Session Amount'] // Actual column headings
         ];
     }
-            public function registerEvents(): array
+           public function registerEvents(): array
     {
         return [
             AfterSheet::class => function (AfterSheet $event) {
                 $sheet = $event->sheet->getDelegate();
                 
                 // Merge Title Row and Apply Bold Styling
-                $sheet->mergeCells('A1:F1'); // Merge across 6 columns
+                $sheet->mergeCells('A1:I1'); // Merge across report columns
                 $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
                 $sheet->getStyle('A1')->getAlignment()->setHorizontal('center');
 
@@ -59,6 +60,7 @@ class SessionExport implements FromCollection, WithHeadings
                 
                 // Make Column Headings Bold
                 $sheet->getStyle('A4:F4')->getFont()->setBold(true);
+                $sheet->getStyle('A4:I4')->getFont()->setBold(true);
             }
         ];
     }
