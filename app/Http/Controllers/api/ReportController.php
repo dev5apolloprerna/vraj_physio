@@ -1146,105 +1146,141 @@ public function patient_attended_session(Request $request)
             ], 401);
         }
 
-        $User = auth()->guard('api')->user();
-        if ($request->device_token != $User->device_token) {
+        $user = auth()->guard('api')->user();
+
+        if ($request->device_token != $user->device_token) {
             return response()->json([
-                "ErrorCode" => "1",
-                'Status' => 'Failed',
-                'Message' => 'Device Token Not Match',
+                'ErrorCode' => '1',
+                'Status'    => 'Failed',
+                'Message'   => 'Device Token Not Match',
             ], 401);
         }
 
-        $month     = $request->input('month');
-        $year      = $request->input('year');
-        $fromDate  = $request->input('from_date', $request->input('fromdate'));
-        $toDate    = $request->input('to_date', $request->input('todate'));
-        $hasDateFilter = ($month && $year) || ($fromDate && $toDate);
+        $clinicId = $request->input('clinic_id');
+        $month    = $request->input('month');
+        $year     = $request->input('year');
+        $fromDate = $request->input('from_date', $request->input('fromdate'));
+        $toDate   = $request->input('to_date', $request->input('todate'));
 
-        // STEP 1: Get all treatment names (in uppercase) with default 0
+        $hasMonthYearFilter = !empty($month) && !empty($year);
+        $hasDateRangeFilter = !empty($fromDate) && !empty($toDate);
+
+        /*
+        |--------------------------------------------------------------------------
+        | STEP 1: All treatments with default 0
+        |--------------------------------------------------------------------------
+        */
         $defaultTreatments = DB::table('treatment_master')
             ->where('isDelete', 0)
             ->pluck('treatment_name')
             ->mapWithKeys(function ($name) {
-                return [strtoupper($name) => 0];
+                return [strtoupper(trim($name)) => 0];
             })
             ->toArray();
 
-        // STEP 2: Actual session counts
-        $query = DB::table('sessionmaster')
-            ->join('patient_master', 'sessionmaster.patient_id', '=', 'patient_master.patient_id')
-            ->join('treatment_master', 'sessionmaster.treatment_id', '=', 'treatment_master.treatment_id')
-            ->select(
-                DB::raw("CONCAT(patient_master.patient_first_name, ' ', patient_master.patient_last_name) as patient_name"),
-                DB::raw("UPPER(treatment_master.treatment_name) as treatment_name"),
-                DB::raw("COUNT(*) as session_count")
+        /*
+        |--------------------------------------------------------------------------
+        | STEP 2: Get patient+treatment from sessionmaster for searching
+        | Search/filter is based on sessionmaster.created_at
+        | Display value is from patient_suggested_treatment.iUsedSession
+        |--------------------------------------------------------------------------
+        */
+        $query = DB::table('sessionmaster as sm')
+            ->join('patient_master as pm', 'sm.patient_id', '=', 'pm.patient_id')
+            ->join('treatment_master as tm', 'sm.treatment_id', '=', 'tm.treatment_id')
+            ->leftJoin('patient_suggested_treatment as pst', function ($join) {
+                $join->on('pst.patient_id', '=', 'sm.patient_id')
+                     ->on('pst.treatment_id', '=', 'sm.treatment_id');
+            })
+            ->where('sm.session_status', 2);
+
+        if (!empty($clinicId)) {
+            $query->where('pm.clinic_id', $clinicId);
+        }
+
+        if ($hasMonthYearFilter) {
+            $query->whereYear('sm.created_at', $year)
+                  ->whereMonth('sm.created_at', $month);
+        }
+
+        if ($hasDateRangeFilter) {
+            $query->whereBetween('sm.created_at', [$fromDate, $toDate]);
+        }
+
+        $results = $query->select(
+                'sm.patient_id',
+                'sm.treatment_id',
+                DB::raw("CONCAT(COALESCE(pm.patient_first_name, ''), ' ', COALESCE(pm.patient_last_name, '')) as patient_name"),
+                DB::raw("UPPER(tm.treatment_name) as treatment_name"),
+                DB::raw("COALESCE(MIN(pst.iUsedSession), 0) as session_count")
             )
-            ->where('sessionmaster.session_status', 2);
-        if ($month && $year) {
-            $query->whereYear('sessionmaster.created_at', $year)
-                  ->whereMonth('sessionmaster.created_at', $month);
-        }
+            ->groupBy(
+                'sm.patient_id',
+                'sm.treatment_id',
+                'pm.patient_first_name',
+                'pm.patient_last_name',
+                'tm.treatment_name'
+            )
+            ->orderBy('patient_name')
+            ->get();
 
-        if ($fromDate && $toDate) {
-            $query->whereBetween('sessionmaster.created_at', [$fromDate, $toDate]);
-        }
-
-        $query->groupBy('sessionmaster.patient_id', 'patient_name', 'treatment_name');
-        $results = $query->get();
-
-        // STEP 3: Manual consumed sessions
-         $manuals = collect();
-        if (!$hasDateFilter) {
-            $manuals = DB::table('patient_suggested_treatment as pst')
-                ->join('patient_master as pm', 'pst.patient_id', '=', 'pm.patient_id')
-                ->join('treatment_master as tm', 'pst.treatment_id', '=', 'tm.treatment_id')
-                ->select(
-                    DB::raw("CONCAT(pm.patient_first_name, ' ', pm.patient_last_name) as patient_name"),
-                    DB::raw("UPPER(tm.treatment_name) as treatment_name"),
-                    DB::raw("SUM(pst.manually_consumed) as session_count")
-                )
-                //->where('pst.isActive', 1)
-                ->groupBy('pst.patient_id', 'patient_name', 'treatment_name')
-                ->get();
-        }
-        // STEP 4: Merge results
-        $merged = collect($results)->merge($manuals);
+        /*
+        |--------------------------------------------------------------------------
+        | STEP 3: Build final array with all treatments defaulting to 0
+        |--------------------------------------------------------------------------
+        */
         $finalData = [];
 
-        foreach ($merged as $row) {
-            $patientName = $row->patient_name;
-            $treatmentName = $row->treatment_name;
-            $sessionCount = $row->session_count;
+        foreach ($results as $row) {
+            $patientName   = trim($row->patient_name);
+            $treatmentName = strtoupper(trim($row->treatment_name));
+            $sessionCount  = (int) $row->session_count;
 
             if (!isset($finalData[$patientName])) {
                 $finalData[$patientName] = [
                     'patient_name' => $patientName,
-                    'treatments'   => $defaultTreatments
+                    'treatments'   => $defaultTreatments,
                 ];
             }
 
-            $finalData[$patientName]['treatments'][$treatmentName] += $sessionCount;
+            if (array_key_exists($treatmentName, $finalData[$patientName]['treatments'])) {
+                $finalData[$patientName]['treatments'][$treatmentName] = $sessionCount;
+            } else {
+                $finalData[$patientName]['treatments'][$treatmentName] = $sessionCount;
+            }
         }
 
-        // STEP 5: Add totals
+        /*
+        |--------------------------------------------------------------------------
+        | STEP 4: Add total
+        |--------------------------------------------------------------------------
+        */
         foreach ($finalData as $patient => &$data) {
-            $treatments = $data['treatments'];
-            $total = array_sum($treatments);
+            $data['total'] = array_sum($data['treatments']);
 
             $data = [
                 'patient_name' => $data['patient_name'],
-                'total' => $total,
-                'treatments' => $treatments,
+                'total'        => $data['total'],
+                'treatments'   => $data['treatments'],
             ];
-
-            $finalData[$patient] = $data;
         }
+        unset($data);
 
         $patientVisitArray = array_values($finalData);
 
-        // DO NOT TOUCH: Excel export block
+        /*
+        |--------------------------------------------------------------------------
+        | STEP 5: Excel export
+        |--------------------------------------------------------------------------
+        */
         if ($request->status == 1) {
-            $export = new PatientVisit($patientVisitArray, $request->fromdate, $request->todate, $request->month, $request->year);
+            $export = new PatientVisit(
+                $patientVisitArray,
+                $request->fromdate,
+                $request->todate,
+                $request->month,
+                $request->year
+            );
 
             $basePath = '/home3/vrajdahj/vrajphysioapp.vrajdentalclinic.com/reports';
             if (!file_exists($basePath)) {
@@ -1252,28 +1288,31 @@ public function patient_attended_session(Request $request)
             }
 
             $fileName = 'Patient_visit_Report_' . now()->format('Y_m_d_H_i_s') . '.xlsx';
-            $filePath = $basePath . '/' . $fileName;
 
             Excel::store($export, 'export/' . $fileName, 'public');
 
             $fileUrl = asset('reports/export/' . $fileName);
 
             return response()->json([
-                'status' => 'success',
-                'file_url' => $fileUrl
+                'status'   => 'success',
+                'file_url' => $fileUrl,
             ]);
         }
 
         return response()->json([
-            'status' => 'success',
-            'message' => 'Patient Visit Count',
-            'Patient Visit Count' => $patientVisitArray,
+            'status'               => 'success',
+            'message'              => 'Patient Visit Count',
+            'Patient Visit Count'  => $patientVisitArray,
         ]);
 
     } catch (ValidationException $e) {
-        return response()->json(['errors' => $e->errors()], 422);
+        return response()->json([
+            'errors' => $e->errors()
+        ], 422);
     } catch (\Throwable $th) {
-        return response()->json(['error' => $th->getMessage()], 500);
+        return response()->json([
+            'error' => $th->getMessage()
+        ], 500);
     }
 }
 
