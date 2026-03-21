@@ -39,7 +39,6 @@ class SessionExport implements FromCollection, WithHeadings
             'Patient Name',
             'Therapist Name',
             'Treatment Name',
-            'Consumed Session',
             'Group Session',
             'Per Session Amount'] // Actual column headings
         ];

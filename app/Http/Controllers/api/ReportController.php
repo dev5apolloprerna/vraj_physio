@@ -184,7 +184,6 @@ public function patient_attended_session(Request $request)
                 "patient_name" => $row->patient_name ?? '-',
                 "therapist_name" => $row->therapist_name ?? '-',
                 "treatment_name" => $row->treatment_name ?? '-',
-                "consumed_session" => $consumedSession,
                 "group_session" => $groupSession,
                 "total_session_amount" => $amount,
             ];
