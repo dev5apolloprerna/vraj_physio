@@ -189,6 +189,7 @@ Route::post('/total_patient_collection_report', [ReportController::class, 'total
 Route::post('/groupsession_report', [ReportController::class, 'groupsession_report'])->name('groupsession_report');
 Route::post('/patient_visit_report', [ReportController::class, 'patient_visit_report'])->name('patient_visit_report');
 Route::post('/upcoming_renewal_report', [ReportController::class, 'upcoming_renewal_report'])->name('upcoming_renewal_report');
+Route::post('/overdue_payment_report', [ReportController::class, 'overdue_payment_report'])->name('overdue_payment_report');
 
 //-----------------------------Dashboard -------------------------------//
 Route::post('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
