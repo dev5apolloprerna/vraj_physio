@@ -2307,7 +2307,8 @@ class CRUDController extends Controller
 
 
                 // Allow check-in only if the total inpatient count is within the session limit
-                if ($inpatientcount < $suggested->iAvailableSession) 
+                //if ($inpatientcount < $suggested->iAvailableSession) 
+                if ($suggested->iAvailableSession >= 0) 
                 {
                     if (!$inpatient) {
                         $GroupSession = $request->isGroupSession == 1 ? 1 : 0;
