@@ -55,6 +55,13 @@ public function patient_attended_session(Request $request)
             ], 401);
         }
 
+        $invoiceByOrderDetail = DB::table('orderpayment as op')
+            ->select([
+                'op.orderDetailId',
+                DB::raw('MIN(op.invoice_no) as invoice_no'),
+            ])
+            ->groupBy('op.orderDetailId');
+            
         $attendedSession = SessionMaster::from('sessionmaster as sm')
             ->select([
                 'sm.created_at',
@@ -84,7 +91,10 @@ public function patient_attended_session(Request $request)
             ->leftJoin('treatment_master as tm', 'tm.treatment_id', '=', 'sm.treatment_id')
             ->leftJoin('users as u', 'u.id', '=', 'sm.therapist_id')
             ->leftJoin('patient_master as pm', 'pm.patient_id', '=', 'sm.patient_id')
-            ->leftJoin('orderpayment as op', 'op.orderDetailId', '=', 'pst.iOrderDetailId')
+            //->leftJoin('orderpayment as op', 'op.orderDetailId', '=', 'pst.iOrderDetailId')
+            ->leftJoinSub($invoiceByOrderDetail, 'op', function ($join) {
+                $join->on('op.orderDetailId', '=', 'pst.iOrderDetailId');
+            })
             ->leftJoin('patientin as pi', 'pi.iPatientInId', '=', 'sm.iPatientInId')
             ->where('sm.session_status', 2)
             ->when($request->fromdate, function ($query) use ($request) {
@@ -123,7 +133,10 @@ public function patient_attended_session(Request $request)
             ->leftJoin('treatment_master as tm', 'tm.treatment_id', '=', 'ptl.treatment_id')
             ->leftJoin('users as u', 'u.id', '=', 'ptl.therapist_id')
             ->leftJoin('patient_master as pm', 'pm.patient_id', '=', 'ptl.patient_id')
-            ->leftJoin('orderpayment as op', 'op.orderDetailId', '=', 'ptl.iOrderDetailId')
+            //->leftJoin('orderpayment as op', 'op.orderDetailId', '=', 'ptl.iOrderDetailId')
+            ->leftJoinSub($invoiceByOrderDetail, 'op', function ($join) {
+                $join->on('op.orderDetailId', '=', 'ptl.iOrderDetailId');
+            })
             ->whereNotNull('ptl.manually_consumed')
             ->where('ptl.manually_consumed', '>', 0)
             ->when($request->fromdate, function ($query) use ($request) {
@@ -145,14 +158,33 @@ public function patient_attended_session(Request $request)
         $sessionList = [];
         $sessionList2 = [];
 
-        $allRows = $attendedSession->concat($manualSessions)->sortBy(function ($row) {
+        /*$allRows = $attendedSession->concat($manualSessions)->sortBy(function ($row) {
             return sprintf(
                 '%s-%010d-%010d',
                 $row->created_at,
                 (int) ($row->iSessionTakenId ?? 0),
                 (int) ($row->iLedgerId ?? 0)
             );
-        })->values();
+        })->values();*/
+        
+          $allRows = $attendedSession
+            ->concat($manualSessions)
+            ->unique(function ($row) {
+                if (($row->entry_type ?? '') === 'manual') {
+                    return 'manual-' . (int) ($row->iLedgerId ?? 0);
+                }
+
+                return 'regular-' . (int) ($row->iSessionTakenId ?? 0);
+            })
+            ->sortBy(function ($row) {
+                return sprintf(
+                    '%s-%010d-%010d',
+                    $row->created_at,
+                    (int) ($row->iSessionTakenId ?? 0),
+                    (int) ($row->iLedgerId ?? 0)
+                );
+            })
+            ->values();
 
         foreach ($allRows as $row) {
             if (($row->entry_type ?? '') === 'manual') {
