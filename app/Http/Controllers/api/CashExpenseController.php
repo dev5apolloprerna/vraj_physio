@@ -14,84 +14,111 @@ use Illuminate\Support\Facades\DB;
 class CashExpenseController extends Controller
 {
     public function index(Request $request)
-    {
-        if(auth()->guard('api')->user()){
-            $cashExpenses = CashExpense::select("cash_expenses.*")
-                ->where(["cash_expenses.clinic_id" => $request->clinic_id,"isDelete" => 0])
-                
-				->when($request->fromDate, function ($query) use ($request) {
-						$query->where(DB::raw("DATE_FORMAT(expense_date,'%Y-%m-%d')"),'>=',DB::raw("DATE_FORMAT('".date('Y-m-d',strtotime($request->fromDate))."','%Y-%m-%d')"));
-			    })
-			    ->when($request->toDate, function ($query) use ($request) {
-						$query->where(DB::raw("DATE_FORMAT(expense_date,'%Y-%m-%d')"),'<=',DB::raw("DATE_FORMAT('".date('Y-m-d',strtotime($request->toDate))."','%Y-%m-%d')"));
-			    })
-			    ->when($request->selected_date, function ($query) use ($request) {
-						$query->where(DB::raw("DATE_FORMAT(expense_date,'%Y-%m-%d')"),'=',DB::raw("DATE_FORMAT('".date('Y-m-d',strtotime($request->selected_date))."','%Y-%m-%d')"));
-			    })
-			    ->when($request->month, function ($query) use ($request) {
-					$query->where(DB::raw("MONTH(expense_date)"),'=',$request->month);
-				})
-    			->when($request->year, function ($query) use ($request) {
-					$query->where(DB::raw("YEAR(expense_date)"),'=',$request->year);
-				})
-				->orderBy('cash_expenses.expense_date','asc')
-				// ->toSql();
-                ->get();
-				// dd($cashExpenses);
-            if (!$cashExpenses->isEmpty()) {
-                $data = [];
-                foreach($cashExpenses as $cashExpense){
-                    $data[] = array(
-                        "cash_expense_id" => $cashExpense->id,
-                        'cash_expense' => $cashExpense->cash_expense,
-                        'amount' => $cashExpense->amount,
-                        'expense_date' => date('d-m-Y',strtotime($cashExpense->expense_date)),
-                        'clinic_id' => $cashExpense->clinic_id,
-                        'strDescription' => $cashExpense->strDescription
-                    );
-                }
-                
-                $pdffile = $request->pdffile;
-                if($pdffile == 1 && !empty($data)){
-                    
-                    $pdf = PDF::loadView('cash_expenses_voucher_list',['Collection' => $data]);
-    				$fileName = date('d-m-Y')."_cash_expenses_voucher";
-    				$content = $pdf->download()->getOriginalContent();
-    				Storage::put('public/assets/cash_expenses_voucher/'.$fileName . '.pdf',$content);
-    				
-    				if($_SERVER['SERVER_NAME'] == "127.0.0.1"){
-    					$pdf->save(public_path('assets/cash_expenses_voucher/')  . $fileName. '.pdf');	
-    				}else {
-    					$pdf->save(public_path('../../vgdcapp.vrajdentalclinic.com/assets/cash_expenses_voucher/')  . $fileName. '.pdf');
-    				}
-    		
-    				$dailycollectionFile = asset('assets/cash_expenses_voucher/'. $fileName. '.pdf');
-    				return response()->json([
-    					'status' => 'success',
-    					'dailycollectionFile' => $dailycollectionFile,
-    					'data' => $data,
-    					'message' => 'Cash Expense List',
-    				]);
+{
+    if (auth()->guard('api')->user()) {
+
+        $cashExpenses = CashExpense::select("cash_expenses.*")
+            ->where([
+                "cash_expenses.clinic_id" => $request->clinic_id,
+                "isDelete" => 0
+            ])
+            ->when($request->fromDate, function ($query) use ($request) {
+                $query->where(
+                    DB::raw("DATE_FORMAT(expense_date,'%Y-%m-%d')"),
+                    '>=',
+                    DB::raw("DATE_FORMAT('" . date('Y-m-d', strtotime($request->fromDate)) . "','%Y-%m-%d')")
+                );
+            })
+            ->when($request->toDate, function ($query) use ($request) {
+                $query->where(
+                    DB::raw("DATE_FORMAT(expense_date,'%Y-%m-%d')"),
+                    '<=',
+                    DB::raw("DATE_FORMAT('" . date('Y-m-d', strtotime($request->toDate)) . "','%Y-%m-%d')")
+                );
+            })
+            ->when($request->selected_date, function ($query) use ($request) {
+                $query->where(
+                    DB::raw("DATE_FORMAT(expense_date,'%Y-%m-%d')"),
+                    '=',
+                    DB::raw("DATE_FORMAT('" . date('Y-m-d', strtotime($request->selected_date)) . "','%Y-%m-%d')")
+                );
+            })
+            ->when($request->month, function ($query) use ($request) {
+                $query->where(DB::raw("MONTH(expense_date)"), '=', $request->month);
+            })
+            ->when($request->year, function ($query) use ($request) {
+                $query->where(DB::raw("YEAR(expense_date)"), '=', $request->year);
+            })
+            ->orderBy('cash_expenses.expense_date', 'asc')
+            ->get();
+
+        if (!$cashExpenses->isEmpty()) {
+
+            $data = [];
+            $totalExpenseAmount = 0;
+
+            foreach ($cashExpenses as $cashExpense) {
+                $totalExpenseAmount += (float) $cashExpense->amount;
+
+                $data[] = [
+                    "cash_expense_id" => $cashExpense->id,
+                    'cash_expense' => $cashExpense->cash_expense,
+                    'amount' => $cashExpense->amount,
+                    'expense_date' => date('d-m-Y', strtotime($cashExpense->expense_date)),
+                    'clinic_id' => $cashExpense->clinic_id,
+                    'strDescription' => $cashExpense->strDescription
+                ];
+            }
+
+            $pdffile = $request->pdffile;
+
+            if ($pdffile == 1 && !empty($data)) {
+
+                $pdf = PDF::loadView('cash_expenses_voucher_list', [
+                    'Collection' => $data,
+                    'totalExpenseAmount' => $totalExpenseAmount
+                ]);
+
+                $fileName = date('d-m-Y') . "_cash_expenses_voucher";
+                $content = $pdf->download()->getOriginalContent();
+                Storage::put('public/assets/cash_expenses_voucher/' . $fileName . '.pdf', $content);
+
+                if ($_SERVER['SERVER_NAME'] == "127.0.0.1") {
+                    $pdf->save(public_path('assets/cash_expenses_voucher/') . $fileName . '.pdf');
                 } else {
-                    return response()->json([
-        				'status' => 'success',
-        				'message' => 'Cash Expense List',
-        				'data' => $data
-        		    ]);
+                    $pdf->save(public_path('../../vgdcapp.vrajdentalclinic.com/assets/cash_expenses_voucher/') . $fileName . '.pdf');
                 }
+
+                $dailycollectionFile = asset('assets/cash_expenses_voucher/' . $fileName . '.pdf');
+
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Cash Expense List',
+                    'total_expense_amount' => $totalExpenseAmount,
+                    'dailycollectionFile' => $dailycollectionFile,
+                    'data' => $data,
+                ]);
             } else {
                 return response()->json([
-				    'status' => 'error',
-    				'message' => 'No Data Found.',
-    		    ], 401);      
+                    'status' => 'success',
+                    'message' => 'Cash Expense List',
+                    'total_expense_amount' => $totalExpenseAmount,
+                    'data' => $data
+                ]);
             }
         } else {
             return response()->json([
-				'status' => 'error',
-				'message' => 'User is not Authorised.',
-		    ], 401);
+                'status' => 'error',
+                'message' => 'No Data Found.',
+            ], 401);
         }
+    } else {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'User is not Authorised.',
+        ], 401);
     }
+}
 
     public function store(Request $request)
     {

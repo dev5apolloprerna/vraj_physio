@@ -2729,7 +2729,7 @@ class CRUDController extends Controller
         
                     if ($alreadyCancelled) {
                         return response()->json([
-                            'status' => 'success',
+                            'status' => 'fail',
                             'message' => 'Patient Session Already Cancled',
                         ]);
                     }
@@ -2827,7 +2827,7 @@ class CRUDController extends Controller
                     $inpatient->patient_schedule_id  = $session->patient_schedule_id;
                     $inpatient->save();
         
-                    $session=SessionMaster::where(['scheduleid'=>$request->patient_schedule_id])->first();
+                    $session=SessionMaster::where(['scheduleid'=>$request->patient_schedule_id,'iPatientInId'=>$request->inpatientId])->first();
                     $session->session_status= 3;
                     $session->save();
         
