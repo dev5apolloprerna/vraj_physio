@@ -1553,7 +1553,7 @@ public function refrenceBy_list(Request $request)
                           ->orWhere('leave', 0);
                         })
                     ->first();
-                    
+
                     if(!empty($inPatient) && $inPatient->status== 0 && $inPatient->leave== 0)
                     {
                         $inpatient=1;
@@ -1598,6 +1598,7 @@ public function refrenceBy_list(Request $request)
                         "consumed_session" => optional($session)->iUsedSession ?? 0,
                         "available_session" => number_format($availableSession, 1),
                         "inpatient"=>$inpatient,
+                        "inpatientId"=>$inPatient->iPatientInId ?? '',
                         "therapist_list" => $tlist
                     ];
                     
@@ -2818,6 +2819,7 @@ public function refrenceBy_list(Request $request)
                                         "consumed_session" => optional($session)->iUsedSession ?? 0,
                                         "available_session" =>number_format($availableSession,1) ?? 0,
                                          "inpatient"=>$inpatient,
+                                         "inpatientId"=>$inPatient->iPatientInId ?? '',
                                         "therapist_list"=>$tlist
                                     );
                                  }

@@ -79,14 +79,14 @@ class CashCollectionController extends Controller
                 'collection_date' => 'nullable|date'
             ]);
             $cashLedger = CashLedger::where(["clinic_id" => $request->clinic_id])->orderBy("id","desc")->first();
-            if ($cashLedger->cl_amt <= $request->amount) {
+            if ($cashLedger->cl_amt < $request->amount) {
                 return response()->json([
 				    'status' => 'error',
                     'message' => 'The closing amount must be greater than the requested amount.'
                 ],401);
             }
             
-           $existingCollection = CashCollection::where([
+           /*$existingCollection = CashCollection::where([
                 'clinic_id' => $request->clinic_id,
                 'received_by' => $request->received_by
             ])
@@ -105,7 +105,7 @@ class CashCollectionController extends Controller
                         'received_by' => $existingCollection->received_by ?? 'Unknown'
                     ]
                 ], 409); // 409 Conflict status code
-            }
+            }*/
             
             $data = array(
                 'amount' => $request->amount,
