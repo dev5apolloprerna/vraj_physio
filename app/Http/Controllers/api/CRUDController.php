@@ -33,6 +33,8 @@ use App\Models\PatientIn;
 use App\Models\OrderPayment;
 use App\Models\PatientTreatmentLedger;
 use App\Models\User;
+use App\Models\CashLedger;
+
 use Carbon\Carbon;
 
 class CRUDController extends Controller
@@ -2387,7 +2389,7 @@ class CRUDController extends Controller
                         ], 401);
                     }
                     
-                    $detail =OrderDetail::where(["iOrderId"=>$request->order_id,'iOrderDetailId'=>$request->order_detail_id])->first();
+                    /*$detail =OrderDetail::where(["iOrderId"=>$request->order_id,'iOrderDetailId'=>$request->order_detail_id])->first();
                     $udata = Order::where(["iOrderId"=>$request->order_id])->first();
                     $orderdata = OrderDetail::where(["iOrderId"=>$request->order_id])->count();
                     
@@ -2407,18 +2409,91 @@ class CRUDController extends Controller
                     }
                     if($orderdata == 1)
                     {
-                        $udata = Order::where(["iOrderId"=>$request->order_id])->delete();
+                        $udata = Order::where(["iOrderId"=>$request->order_id])->delete();*/
+
+                    $detail = OrderDetail::where([
+                        "iOrderId" => $request->order_id,
+                        'iOrderDetailId' => $request->order_detail_id
+                    ])->first();
+                    $udata = Order::where(["iOrderId" => $request->order_id])->first();
+
+                    if (!$detail || !$udata) {
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => 'Order detail not found.'
+                        ], 404);
+
                     }
-                    $suggested=PatientSuggestedTreatment::where(['iOrderId'=>$request->order_id,'iOrderDetailId'=>$request->order_detail_id])->delete();
+                    /*$suggested=PatientSuggestedTreatment::where(['iOrderId'=>$request->order_id,'iOrderDetailId'=>$request->order_detail_id])->delete();
 
                     $detaildata = OrderDetail::where(["iOrderId"=>$request->order_id,'iOrderDetailId'=>$request->order_detail_id])->delete();
                     $paymentdata = OrderPayment::where(["iOrderId"=>$request->order_id,'orderDetailId'=>$request->order_detail_id])->delete();
                     
-                    $patientScheduleIds = $request->patient_schedule_id; // Get array of schedule IDs from the request
+                    $patientScheduleIds = $request->patient_schedule_id; // Get array of schedule IDs from the request*/
+                 DB::transaction(function () use ($request, $detail, $udata, $User) {
+                        $orderdata = OrderDetail::where(["iOrderId" => $request->order_id])->count();
 
-                    if (!empty($patientScheduleIds) && is_array($patientScheduleIds)) {
+                    /*if (!empty($patientScheduleIds) && is_array($patientScheduleIds)) {
                         $schedule_delete = PatientSchedule::whereIn('patient_schedule_id', $patientScheduleIds)->delete(); // Replace 'id' with the correct column name
-                    }
+                    }*/
+                     if ($orderdata != 0) {
+                            $total = max(0, $udata->iNetAmount - $detail->iAmount);
+                            $iAmount = max(0, $udata->iAmount - $detail->iAmount);
+                            $DueAmount = max(0, $udata->DueAmount - $detail->iAmount);
+
+                            $data = array(
+                                'iNetAmount' => $total,
+                                'iAmount' => $iAmount,
+                                'DueAmount' => $DueAmount,
+                            );
+
+                            Order::where("iOrderId", "=", $request->order_id)->update($data);
+                        }
+
+                        if ($orderdata == 1) {
+                            Order::where(["iOrderId" => $request->order_id])->delete();
+                        }
+
+                        $paymentIds = OrderPayment::where([
+                            "iOrderId" => $request->order_id,
+                            'orderDetailId' => $request->order_detail_id
+                        ])->pluck('OrderPaymentId')->toArray();
+
+                        if (!empty($paymentIds)) {
+                            $firstAffectedLedgerId = CashLedger::where('order_id', $request->order_id)
+                                ->whereIn('order_payment_id', $paymentIds)
+                                ->orderBy('id', 'asc')
+                                ->value('id');
+
+                            CashLedger::where('order_id', $request->order_id)
+                                ->whereIn('order_payment_id', $paymentIds)
+                                ->delete();
+
+                            if ($firstAffectedLedgerId) {
+                                $this->recalcCashLedgerFrom((int) $User->clinic_id, (int) $firstAffectedLedgerId);
+                            }
+                        }
+
+                        PatientSuggestedTreatment::where([
+                            'iOrderId' => $request->order_id,
+                            'iOrderDetailId' => $request->order_detail_id
+                        ])->delete();
+
+                        OrderDetail::where([
+                            "iOrderId" => $request->order_id,
+                            'iOrderDetailId' => $request->order_detail_id
+                        ])->delete();
+
+                        OrderPayment::where([
+                            "iOrderId" => $request->order_id,
+                            'orderDetailId' => $request->order_detail_id
+                        ])->delete();
+
+                        $patientScheduleIds = $request->patient_schedule_id;
+                        if (!empty($patientScheduleIds) && is_array($patientScheduleIds)) {
+                            PatientSchedule::whereIn('patient_schedule_id', $patientScheduleIds)->delete();
+                        }
+                    });
 
                          return response()->json([
                             'status' => 'success',
@@ -2437,6 +2512,37 @@ class CRUDController extends Controller
         } catch (\Throwable $th) {
             return response()->json(['error' => $th->getMessage()], 500);
         }   
+    }
+     private function recalcCashLedgerFrom(int $clinicId, int $fromId): void
+    {
+        $prev = CashLedger::where('clinic_id', $clinicId)
+            ->where('id', '<', $fromId)
+            ->orderByDesc('id')
+            ->lockForUpdate()
+            ->first();
+
+        $running = (float) ($prev->cl_amt ?? 0);
+
+        $rows = CashLedger::where('clinic_id', $clinicId)
+            ->where('id', '>=', $fromId)
+            ->orderBy('id', 'asc')
+            ->lockForUpdate()
+            ->get();
+
+        foreach ($rows as $row) {
+            $row->op_amt = $running;
+
+            $cr = (float) ($row->cr_amt ?? 0);
+            $dr = (float) ($row->dr_amt ?? 0);
+
+            $running = $running + $cr - $dr;
+            if ($running < 0) {
+                $running = 0;
+            }
+
+            $row->cl_amt = $running;
+            $row->save();
+        }
     }
      public function edit_my_treatment_list(Request $request)
     {
